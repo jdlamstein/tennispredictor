@@ -1,11 +1,12 @@
 import pandas as pd
-import tensorflow as tf
 import param_tennis as param
 import os
 import numpy as np
 import datetime
 from tqdm import tqdm
-
+from torch.utils.data import TensorDataset, DataLoader
+import torch
+import torch.nn.functional as F
 
 class Elo:
     def __init__(self, csv):
@@ -149,15 +150,6 @@ class Dataspring:
         df = df.drop(columns=namelst)
         return df
 
-    def _int64_feature(self, value):
-        return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
-
-    def _float_feature(self, value):
-        """Returns a float_list from a float / double."""
-        return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
-
-    def _bytes_feature(self, value):
-        return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
     def get_col_types(self, df):
         types = []
@@ -230,6 +222,29 @@ class Dataspring:
         self.ds_test = tf.data.Dataset.from_tensor_slices((feats_test, self.labels_test))
         return feats_train, feats_val, feats_test
 
+    def build_dataset_with_labels(self):
+        df = pd.read_csv(self.csv)
+
+        df = self.remove_cols_with_name_in_them(df)
+
+        df_train, df_val, df_test, self.labels_train, self.labels_val, self.labels_test = self.process_df(df)
+        print('train columns', pd.unique(df_train.columns))
+
+        df_train, mean, std = self.derive_and_norm(df_train)
+        df_val = self.norm_df(df_val, mean, std)
+        df_test = self.norm_df(df_test, mean, std)
+        # todo: save mean and std for deployment, log in wandb
+        feats_train = df_train.to_numpy()
+        feats_val = df_val.to_numpy()
+        feats_test = df_test.to_numpy()
+        print('feature length', len(feats_train))
+
+        dataset_train = TensorDataset(torch.Tensor(feats_train), F.one_hot(torch.Tensor(self.labels_train).to(torch.int64), self.p.output_size))
+        dataset_val = TensorDataset(torch.Tensor(feats_val), F.one_hot(torch.Tensor(self.labels_val).to(torch.int64), self.p.output_size))
+        dataset_test = TensorDataset(torch.Tensor(feats_test), F.one_hot(torch.Tensor(self.labels_test).to(torch.int64), self.p.output_size))
+        return dataset_train, dataset_val, dataset_test
+
+
     def dict_to_ds_deploy(self):
         df = pd.read_csv(self.csv)
         df_deploy, labels_deploy = self.process_df_deploy(df)
@@ -268,7 +283,7 @@ class Dataspring:
         :param df: data
         :return:
         """
-        df = df.sample(frac=1).reset_index(drop=True)
+        df = df.sort_values(by=['tourney_date', 'round'])
         df = df.fillna(-10)  # fill nan
         print('shape', df.shape)
         cols = df.columns
@@ -283,16 +298,15 @@ class Dataspring:
         df = df.drop(columns=['tourney_date'])
 
         types = self.get_col_types(df)
-        df_train = df.sample(frac=0.7, random_state=11)
-        df = df.drop(df_train.index)
-        df_val = df.sample(frac=0.5, random_state=11)
-        df_test = df.drop(df_val.index)
+        df_train = df.iloc[0:int(len(df)*.6)]
+        df_val = df.iloc[int(len(df)*.6):int(len(df)*.8)]
+        df_test = df.iloc[int(len(df)*.8):]
         print('len train', len(df_train))
         print('len val', len(df_val))
         print('len test', len(df_test))
-        self.labels_train = df_train.pop('game_winner') - 1
-        self.labels_val = df_val.pop('game_winner') - 1
-        self.labels_test = df_test.pop('game_winner') - 1
+        self.labels_train = np.array(df_train.pop('game_winner') - 1)
+        self.labels_val = np.array(df_val.pop('game_winner') - 1)
+        self.labels_test = np.array(df_test.pop('game_winner') - 1)
         return df_train, df_val, df_test, self.labels_train, self.labels_val, self.labels_test
 
     def process_df_deploy(self, df):
@@ -420,8 +434,7 @@ class RecentMatches:
 if __name__ == '__main__':
     csv = r'D:\Data\Sports\tennis\tennis_data\atp_database.csv'
     Dat = Dataspring(csv)
-    Dat.dict_to_ds_with_labels()
-    Dat.datagen_base()
+    Dat.build_dataset_with_labels()
 
     # E = Elo(csv)
     # E.populate_elo()

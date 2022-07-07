@@ -20,7 +20,7 @@ def gridsearch():
             props['batch_size'] = batch_size
             p = Param(props)
             Tr = Train(csv, p)
-            Tr.learn_from_dict()
+            Tr.train()
 
 if __name__=='__main__':
     result = pyfiglet.figlet_format("Tennis Gridsearch Training", font="slant")

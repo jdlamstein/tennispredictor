@@ -3,13 +3,17 @@ Train model
 https://towardsdatascience.com/making-big-bucks-with-a-data-driven-sports-betting-strategy-6c21a6869171
 """
 
-from models.model import Net
+from models.model import Model
 from preprocessing.pipeline import Dataspring
 import param_tennis as param
 import os
 import argparse
 import pyfiglet
 import wandb
+from torch.utils.data import DataLoader
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.loggers import WandbLogger
 
 
 class Train:
@@ -17,26 +21,25 @@ class Train:
         self.p = p
         self.csv = csv
 
-    def learn_from_dict(self):
+    def train(self):
+        wandb_logger = WandbLogger()
         Dat = Dataspring(self.csv)
-        savepath = os.path.join(self.p.model_dir, 'tennis_mlp_' + self.p.timestring + '.h5')
-        feats_train, feats_val, feats_test = Dat.dict_to_ds_with_labels()
-        nn = Net(self.p)
-        model = nn.mlp_from_dict(feats_train)
+        # savepath = os.path.join(self.p.model_dir, 'tennis_mlp_' + self.p.timestring + '.h5')
+        dataset_train, dataset_val, dataset_test = Dat.build_dataset_with_labels()
+        model = Model(self.p.learning_rate)
+        train_loader = DataLoader(dataset_train, batch_size=self.p.batch_size, shuffle=True)
+        val_loader = DataLoader(dataset_val, batch_size=self.p.batch_size)
+        test_loader = DataLoader(dataset_test, batch_size=self.p.batch_size)
+        early_stop_callback = EarlyStopping(monitor="val_acc", min_delta=0.00, patience=4, verbose=False,
+                                            mode="max")
 
-        model.fit(x=feats_train, y=Dat.labels_train, validation_data=(feats_val, Dat.labels_val),
-                  batch_size=self.p.batch_size, epochs=self.p.epochs)
-        if not os.path.exists(self.p.model_dir):
-            os.makedirs(self.p.model_dir)
-        model.save(savepath)
-
-    # def learn_from_pd(self):
-    #     Dat = Dataspring(self.csv)
-    #     Dat.pandas_to_ds()
-    #     nn = Net()
-    #     model = nn.mlp_from_dict(feats_train)
-    #
-    #     model.fit(x=feats_train, y=Dat.label  s_train, epochs=self.p.epochs)
+        trainer = pl.Trainer(accelerator='gpu', devices=1,
+                             logger=wandb_logger,
+                             max_epochs = self.p.epochs,
+                             default_root_dir=self.p.model_dir,
+                             callbacks=[early_stop_callback])
+        trainer.fit(model, train_loader, val_loader)
+        trainer.test(model, test_loader)
 
 
 if __name__ == '__main__':
@@ -53,11 +56,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
     print('ARGS:\n', args)
     Tr = Train(args.csv, param.Param(None))
-    Tr.learn_from_dict()
+    Tr.train()
     # todo: set gridsearch, hyperparam optimization
-    # todo: switch to pytorch
     # todo: linear regression
     # todo: incorportate odds, should bet and how much
     # todo: transformer for win percentage?
     # todo: data tests
-    # todo: record on wandb

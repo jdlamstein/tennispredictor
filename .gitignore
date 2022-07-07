@@ -1,4 +1,5 @@
 *.log
 *.h5
-\.idea
-/.idea
+.idea/
+wandb/
+**/__pycache__/

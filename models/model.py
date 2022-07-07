@@ -1,108 +1,111 @@
-"""
-http://www.tennis-data.co.uk/alldata.php  odds
-"""
+import torch
+from pytorch_lightning import LightningModule, Trainer
+from pytorch_lightning.callbacks.progress import TQDMProgressBar
+from pytorch_lightning.loggers import CSVLogger
+from torch import nn
+from torch.nn import functional as F
+from torch.utils.data import DataLoader, random_split
+from torchmetrics import Accuracy
+from torchvision import transforms
 
-import tensorflow as tf
-import tensorflow_addons as tfa
-from tensorflow.keras.layers import Dense, Concatenate
-import numpy as np
-import param_tennis as param
-from preprocessing.pipeline import Dataspring
-from tensorflow.keras.optimizers import Adam, SGD
+class Model(LightningModule):
+    def __init__(self, learning_rate=2e-4):
 
+        super().__init__()
+        self.save_hyperparameters()
+        # Set our init args as class attributes
+        self.learning_rate = learning_rate
 
-class Net:
-    def __init__(self, p):
-        self.p = p
+        # Hardcode some dataset specific attributes
+        self.features = 37
+        self.num_classes = 2
+        # self.transform = transforms.Compose(
+        #     [
+        #         transforms.ToTensor(),
+        #         transforms.Normalize((0.1307,), (0.3081,)),
+        #     ]
+        # )
 
-    def get_inputs(self, feats):
-        inputs = {}
+        # Define PyTorch model
+        self.model = nn.Sequential(
+            nn.Linear(self.features, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            # nn.Dropout(0.1),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 2),
+        )
 
-        for name, column in feats.items():
-            dtype = column.dtype
-            if dtype == object:
-                dtype = tf.string
-            else:
-                dtype = tf.float32
+        self.val_accuracy = Accuracy()
+        self.test_accuracy = Accuracy()
 
-            inputs[name] = tf.keras.Input(shape=(1,), name=name, dtype=dtype)
-        return inputs
+    def forward(self, x):
+        x = self.model(x)
+        return F.log_softmax(x, dim=1)
 
-    def preprocessing(self, inputs):
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        logits = self(x)
+        loss = F.binary_cross_entropy_with_logits(logits, y.float())
+        return loss
 
-        numeric_inputs = {name: input for name, input in inputs.items()
-                          if input.dtype == tf.float32}
-        numeric_lst = list(numeric_inputs.values())
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        logits = self(x)
+        loss = F.binary_cross_entropy_with_logits(logits, y.float())
+        preds = torch.argmax(logits, dim=1)
+        gt = torch.argmax(y, dim=1)
+        self.val_accuracy.update(preds, gt)
 
-        x = Concatenate(name='concat_input')(numeric_lst)
-        # build custom norm, norm based on training set
+        # Calling self.log will surface up scalars for you in TensorBoard
+        self.log("val_loss", loss, prog_bar=True)
+        self.log("val_acc", self.val_accuracy, prog_bar=True)
 
-        # norm = preprocessing.Normalization()
-        # if stage == 'train':
-        #     norm.adapt(np.array(feats[numeric_inputs.keys()]))
-        # all_numeric_inputs = norm(x)
-        all_numeric_inputs = x
-        preprocessed_inputs = all_numeric_inputs
+    def test_step(self, batch, batch_idx):
+        x, y = batch
+        logits = self(x)
+        loss = F.binary_cross_entropy_with_logits(logits, y.float())
+        preds = torch.argmax(logits, dim=1)
+        gt = torch.argmax(y, dim=1)
+        self.test_accuracy.update(preds, gt)
 
-        # for name, input in inputs.items():
-        #     if input.dtype == tf.float32:
-        #         continue
-        #
-        #     lookup = preprocessing.StringLookup(vocabulary=np.unique(feats[name]))
-        #     one_hot = preprocessing.CategoryEncoding(max_tokens=lookup.vocab_size())
-        #
-        #     x = lookup(input)
-        #     x = one_hot(x)
-        #     preprocessed_inputs.append(x)
-        # preprocessed_inputs_cat = Concatenate()(preprocessed_inputs)
-        res = tf.keras.Model(inputs=numeric_inputs, outputs=x, name='preprocess_model')
-        return res
+        # Calling self.log will surface up scalars for you in TensorBoard
+        self.log("test_loss", loss, prog_bar=True)
+        self.log("test_acc", self.test_accuracy, prog_bar=True)
 
-    def mlp_from_dict(self, feats):
-        inputs = self.get_inputs(feats)
-        act = 'relu'
-        lyr = self.preprocessing(inputs)
-        # inp_lst = list(inputs.values)
-        x = lyr(inputs)
-        x = Dense(1028, activation=act)(x)
-        x = Dense(256, activation=act)(x)
-        x = Dense(256, activation=act)(x)
-        x = Dense(256, activation=act)(x)
-        x = Dense(128, activation=act)(x)
-        x = Dense(self.p.output_size, activation='sigmoid')(x)
-        model = tf.keras.models.Model(inputs=inputs, outputs=x)
-        if self.p.optimizer=='adam':
-            optimizer = Adam(learning_rate=self.p.learning_rate)
-        elif self.p.optimizer=='sgd':
-            optimizer = SGD(learning_rate=self.p.learning_rate, momentum=self.p.momentum, nesterov=self.p.nesterov)
-        else:
-            raise ValueError(self.p.optimizer)
-        model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
-        model.summary()
-        return model
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        return optimizer
 
-    def mlp_from_df(self, input_size):
-
-        inputs = self.get_inputs(feats)
-        act = 'relu'
-        lyr = self.preprocessing(inputs)
-        # inp_lst = list(inputs.values)
-        x = lyr(inputs)
-        x = Dense(128, activation=act)(x)
-        x = Dense(256, activation=act)(x)
-        x = Dense(256, activation=act)(x)
-        x = Dense(128, activation=act)(x)
-        x = Dense(self.p.output_size, activation='sigmoid')(x)
-        model = tf.keras.models.Model(inputs=inputs, outputs=x)
-        model.compile(optimizer="Adam", loss=tf.keras.losses.BinaryCrossentropy(from_logits=True), metrics=['accuracy'])
-        model.summary()
-        return model
-
-
-if __name__ == '__main__':
-    csv = r'D:\Data\Sports\tennis\tennis_data\atp_database.csv'
-
-    Dat = Dataspring(csv)
-    feats_train, feats_val, feats_test = Dat.dict_to_ds_with_labels()
-    nn = Net()
-    model = nn.mlp_from_dict(feats_train)
+    ####################
+    # DATA RELATED HOOKS
+    ####################
+    #
+    # def prepare_data(self):
+    #     # download
+    #     MNIST(self.data_dir, train=True, download=True)
+    #     MNIST(self.data_dir, train=False, download=True)
+    #
+    # def setup(self, stage=None):
+    #
+    #     # Assign train/val datasets for use in dataloaders
+    #     if stage == "fit" or stage is None:
+    #         mnist_full = MNIST(self.data_dir, train=True, transform=self.transform)
+    #         self.mnist_train, self.mnist_val = random_split(mnist_full, [55000, 5000])
+    #
+    #     # Assign test dataset for use in dataloader(s)
+    #     if stage == "test" or stage is None:
+    #         self.mnist_test = MNIST(self.data_dir, train=False, transform=self.transform)
+    #
+    # def train_dataloader(self):
+    #     return DataLoader(self.mnist_train, batch_size=BATCH_SIZE)
+    #
+    # def val_dataloader(self):
+    #     return DataLoader(self.mnist_val, batch_size=BATCH_SIZE)
+    #
+    # def test_dataloader(self):
+    #     return DataLoader(self.mnist_test, batch_size=BATCH_SIZE)
