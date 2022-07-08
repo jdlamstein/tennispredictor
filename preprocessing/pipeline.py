@@ -138,9 +138,7 @@ class Dataspring:
         self.ds_train = None
         self.ds_val = None
         self.ds_test = None
-        self.labels_train = None
-        self.labels_val = None
-        self.labels_test = None
+        self.columns = None
 
     def remove_cols_with_name_in_them(self, df):
         namelst = []
@@ -179,55 +177,63 @@ class Dataspring:
         print(cnt_uni)
         return types
 
-    def csv_to_ds(self):
-        df = pd.read_csv(self.csv)
-        df_train, df_val, df_test, self.labels_train, self.labels_val, self.labels_test = self.process_df(df)
-        df_train.to_csv(self.csv_train)
-        df_val.to_csv(self.csv_val)
-        df_test.to_csv(self.csv_test)
-
-        self.ds_train = tf.data.experimental.make_csv_dataset(self.csv_train, batch_size=self.p.batch_size,
-                                                              column_names=df.columns)
-        self.ds_val = tf.data.experimental.make_csv_dataset(self.csv_val, batch_size=self.p.batch_size,
-                                                            column_names=df.columns)
-        self.ds_test = tf.data.experimental.make_csv_dataset(self.csv_test, batch_size=self.p.batch_size,
-                                                             column_names=df.columns)
-
-    def dict_to_ds_with_labels(self):
-        df = pd.read_csv(self.csv)
-
-        df = self.remove_cols_with_name_in_them(df)
-
-        df_train, df_val, df_test, self.labels_train, self.labels_val, self.labels_test = self.process_df(df)
-        print('train columns', pd.unique(df_train.columns))
-
-        df_train, mean, std = self.derive_and_norm(df_train)
-        df_val = self.norm_df(df_val, mean, std)
-        df_test = self.norm_df(df_test, mean, std)
-        # todo: save mean and std for deployment, log in wandb
-        feats_train = {name: np.array(value)
-                       for name, value in df_train.items()}
-        feats_val = {name: np.array(value)
-                     for name, value in df_val.items()}
-        feats_test = {name: np.array(value)
-                      for name, value in df_test.items()}
-        print('feature length', len(feats_train))
-
-        if self.p.output_size==2:
-            self.labels_train = tf.one_hot(self.labels_train, 2)
-            self.labels_val = tf.one_hot(self.labels_val, 2)
-            self.labels_test = tf.one_hot(self.labels_test, 2)
-        self.ds_train = tf.data.Dataset.from_tensor_slices((feats_train, self.labels_train))
-        self.ds_val = tf.data.Dataset.from_tensor_slices((feats_val, self.labels_val))
-        self.ds_test = tf.data.Dataset.from_tensor_slices((feats_test, self.labels_test))
-        return feats_train, feats_val, feats_test
+    # def csv_to_ds(self):
+    #     df = pd.read_csv(self.csv)
+    #     df_train, df_val, df_test, self.labels_train, self.labels_val, self.labels_test = self.process_df(df)
+    #     df_train.to_csv(self.csv_train)
+    #     df_val.to_csv(self.csv_val)
+    #     df_test.to_csv(self.csv_test)
+    #
+    #     self.ds_train = tf.data.experimental.make_csv_dataset(self.csv_train, batch_size=self.p.batch_size,
+    #                                                           column_names=df.columns)
+    #     self.ds_val = tf.data.experimental.make_csv_dataset(self.csv_val, batch_size=self.p.batch_size,
+    #                                                         column_names=df.columns)
+    #     self.ds_test = tf.data.experimental.make_csv_dataset(self.csv_test, batch_size=self.p.batch_size,
+    #                                                          column_names=df.columns)
+    #
+    # def dict_to_ds_with_labels(self):
+    #     df = pd.read_csv(self.csv)
+    #
+    #     df = self.remove_cols_with_name_in_them(df)
+    #
+    #     df_train, df_val, df_test, self.labels_train, self.labels_val, self.labels_test = self.process_df(df)
+    #     print('train columns', pd.unique(df_train.columns))
+    #
+    #     df_train, mean, std = self.derive_and_norm(df_train)
+    #     df_val = self.norm_df(df_val, mean, std)
+    #     df_test = self.norm_df(df_test, mean, std)
+    #     # todo: save mean and std for deployment, log in wandb
+    #     feats_train = {name: np.array(value)
+    #                    for name, value in df_train.items()}
+    #     feats_val = {name: np.array(value)
+    #                  for name, value in df_val.items()}
+    #     feats_test = {name: np.array(value)
+    #                   for name, value in df_test.items()}
+    #     print('feature length', len(feats_train))
+    #
+    #     if self.p.output_size==2:
+    #         self.labels_train = tf.one_hot(self.labels_train, 2)
+    #         self.labels_val = tf.one_hot(self.labels_val, 2)
+    #         self.labels_test = tf.one_hot(self.labels_test, 2)
+    #     self.ds_train = tf.data.Dataset.from_tensor_slices((feats_train, self.labels_train))
+    #     self.ds_val = tf.data.Dataset.from_tensor_slices((feats_val, self.labels_val))
+    #     self.ds_test = tf.data.Dataset.from_tensor_slices((feats_test, self.labels_test))
+    #     return feats_train, feats_val, feats_test
 
     def build_dataset_with_labels(self):
+        feats_train, feats_val, feats_test, labels_train, labels_val, labels_test = self.prepare_dataset()
+
+        dataset_train = TensorDataset(torch.Tensor(feats_train), F.one_hot(torch.Tensor(labels_train).to(torch.int64), self.p.output_size))
+        dataset_val = TensorDataset(torch.Tensor(feats_val), F.one_hot(torch.Tensor(labels_val).to(torch.int64), self.p.output_size))
+        dataset_test = TensorDataset(torch.Tensor(feats_test), F.one_hot(torch.Tensor(labels_test).to(torch.int64), self.p.output_size))
+        return dataset_train, dataset_val, dataset_test
+
+    def prepare_dataset(self):
         df = pd.read_csv(self.csv)
 
         df = self.remove_cols_with_name_in_them(df)
 
-        df_train, df_val, df_test, self.labels_train, self.labels_val, self.labels_test = self.process_df(df)
+        df_train, df_val, df_test, labels_train, labels_val, labels_test = self.process_df(df)
         print('train columns', pd.unique(df_train.columns))
 
         df_train, mean, std = self.derive_and_norm(df_train)
@@ -238,22 +244,17 @@ class Dataspring:
         feats_val = df_val.to_numpy()
         feats_test = df_test.to_numpy()
         print('feature length', len(feats_train))
+        return feats_train, feats_val, feats_test, labels_train, labels_val, labels_test
 
-        dataset_train = TensorDataset(torch.Tensor(feats_train), F.one_hot(torch.Tensor(self.labels_train).to(torch.int64), self.p.output_size))
-        dataset_val = TensorDataset(torch.Tensor(feats_val), F.one_hot(torch.Tensor(self.labels_val).to(torch.int64), self.p.output_size))
-        dataset_test = TensorDataset(torch.Tensor(feats_test), F.one_hot(torch.Tensor(self.labels_test).to(torch.int64), self.p.output_size))
-        return dataset_train, dataset_val, dataset_test
-
-
-    def dict_to_ds_deploy(self):
-        df = pd.read_csv(self.csv)
-        df_deploy, labels_deploy = self.process_df_deploy(df)
-        df_deploy, mean, std = self.derive_and_norm(df_deploy)
-        feats_deploy = {name: np.array(value)
-                        for name, value in df_deploy.items()}
-        print('feature length', len(feats_deploy))
-        self.ds_train = tf.data.Dataset.from_tensor_slices((feats_deploy, labels_deploy))
-        return feats_deploy, labels_deploy
+    # def dict_to_ds_deploy(self):
+    #     df = pd.read_csv(self.csv)
+    #     df_deploy, labels_deploy = self.process_df_deploy(df)
+    #     df_deploy, mean, std = self.derive_and_norm(df_deploy)
+    #     feats_deploy = {name: np.array(value)
+    #                     for name, value in df_deploy.items()}
+    #     print('feature length', len(feats_deploy))
+    #     self.ds_train = tf.data.Dataset.from_tensor_slices((feats_deploy, labels_deploy))
+    #     return feats_deploy, labels_deploy
 
     def pandas_to_ds(self):
         df = pd.read_csv(self.csv)
@@ -296,7 +297,6 @@ class Dataspring:
         df = df.drop(columns=['month'])
         df = df.drop(columns=['day'])
         df = df.drop(columns=['tourney_date'])
-
         types = self.get_col_types(df)
         df_train = df.iloc[0:int(len(df)*.6)]
         df_val = df.iloc[int(len(df)*.6):int(len(df)*.8)]
@@ -304,10 +304,11 @@ class Dataspring:
         print('len train', len(df_train))
         print('len val', len(df_val))
         print('len test', len(df_test))
-        self.labels_train = np.array(df_train.pop('game_winner') - 1)
-        self.labels_val = np.array(df_val.pop('game_winner') - 1)
-        self.labels_test = np.array(df_test.pop('game_winner') - 1)
-        return df_train, df_val, df_test, self.labels_train, self.labels_val, self.labels_test
+        labels_train = np.array(df_train.pop('game_winner') - 1)
+        labels_val = np.array(df_val.pop('game_winner') - 1)
+        labels_test = np.array(df_test.pop('game_winner') - 1)
+        self.columns = df_train.columns
+        return df_train, df_val, df_test, labels_train, labels_val, labels_test
 
     def process_df_deploy(self, df):
         df = df.sample(frac=1).reset_index(drop=True)

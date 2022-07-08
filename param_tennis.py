@@ -17,10 +17,11 @@ class Param:
         self.tfrecord_dir = os.path.join(self.parent, 'tfrecords')
         self.model_dir = os.path.join(self.parent, 'models')
         self.data_dir = os.path.join(self.parent, 'tennis_data')
+        self.fig_dir = os.path.join(self.parent, 'figures')
         self.atp_dir = os.path.join(self.parent, 'tennis_atp')
         if props is None:
             self.batch_size = 128
-            self.epochs = 3
+            self.epochs = 10
             self.learning_rate = 1e-6
             self.optimizer = 'adam'
             self.momentum = 0.9  # sgd
