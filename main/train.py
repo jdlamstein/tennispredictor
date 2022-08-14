@@ -74,7 +74,5 @@ if __name__ == '__main__':
     print('ARGS:\n', args)
     Tr = Train(Param(None), args.csv)
     Tr.train()
-    # todo: pull updated tennis repo, reprocess data
     # todo: incorportate odds, should bet and how much
     # todo: data tests
-    # todo: feature importance? 

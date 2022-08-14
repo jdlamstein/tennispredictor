@@ -10,7 +10,10 @@ import random
 
 class ATP:
     def __init__(self, raw_parent, save_parent):
-        self.csvs = glob.glob(os.path.join(raw_parent, 'atp_matches_[0-3]*.csv'))
+        matches = glob.glob(os.path.join(raw_parent, 'atp_matches_[0-3]*.csv'))
+        futures = glob.glob(os.path.join(raw_parent, 'atp_matches_futures*.csv'))
+        quals = glob.glob(os.path.join(raw_parent, 'atp_matches_qual*.csv'))
+        self.csvs = matches + futures+quals
         self.savedir = save_parent
 
         self.str_labels = ['tourney_id', 'tourney_name']
@@ -23,7 +26,7 @@ class ATP:
     def clean_main(self):
         for csv in self.csvs:
             self.load_df(csv)
-            self.drop_l_w()
+            # self.drop_l_w()
             self.parse_entry()
             self.parse_hand()
             self.parse_round()
@@ -43,24 +46,53 @@ class ATP:
         self.clean_seed()
         self.checks(self.database)
         self.database.to_csv(self.savebase)
+        return self.savebase
 
     def load_df(self, csv):
         self.df = pd.read_csv(csv)
         self.name = csv.split('\\')[-1]
+
     def drop_l_w(self):
         self.df = self.df.loc[:, ~self.df.columns.str.startswith('w_')]
         self.df = self.df.loc[:, ~self.df.columns.str.startswith('l_')]
+
+    def set_l_w(self):
+        """Find who is the winner and loser, build columns accordingly"""
+        wcols = self.df.columns[self.df.columns.str.startswith('w_')].to_list()
+        lcols = self.df.columns[self.df.columns.str.startswith('l_')].to_list()
+        p1_cols = [col.replace('w_', 'player1_') for col in wcols]
+        p2_cols = [col.replace('w_', 'player2_') for col in wcols]
+
+        # initialize columns
+        for col in p1_cols:
+            self.df[col] = -10
+        for col in p2_cols:
+            self.df[col] = -10
+
+        p1_win_idx = self.df[self.df.game_winner == 1].index
+        p2_win_idx = self.df[self.df.game_winner == 2].index
+        self.df[p1_cols] = self.df.loc[p1_win_idx, wcols]
+        self.df[p2_cols] = self.df.loc[p1_win_idx, lcols]
+        self.df[p1_cols] = self.df.loc[p2_win_idx, lcols]
+        self.df[p2_cols] = self.df.loc[p2_win_idx, wcols]
+
     def _replace_uni(self, col, rep=None):
+        """
+        Convert unique strings to integers
+        :param col: column name
+        :param rep: rep dict which is returned from this function
+        :return: rep dict
+        """
         uni = pd.unique(self.df[col].dropna())
         _rep = {col: {}}
         repet = {}
         if rep is None:
             for i, u in enumerate(uni):
-                _rep[col][u] = i
+                _rep[col][u] = i  # {'a': {'b': np.nan}} in col a replace b with nan
             repet = _rep
         else:
-            for key, lst in rep.items():
-                repet[col] = lst
+            for key, dct in rep.items():
+                repet[col] = dct
         self.df = self.df.replace(to_replace=repet)
         return rep
 
@@ -78,9 +110,9 @@ class ATP:
         self._replace_uni('loser_hand', rep)
 
     def clean_seed(self):
-        self.database.player1_seed = self.database.player1_seed.replace({'LL':-1, 'Q':-2, 'WC':-2})
+        self.database.player1_seed = self.database.player1_seed.replace({'LL': -1, 'Q': -2, 'WC': -2})
         self.database.player1_seed = self.database.player1_seed.astype(float)
-        self.database.player2_seed = self.database.player2_seed.replace({'LL':-1, 'Q':-2, 'WC':-2})
+        self.database.player2_seed = self.database.player2_seed.replace({'LL': -1, 'Q': -2, 'WC': -2})
         self.database.player2_seed = self.database.player2_seed.astype(float)
 
     # def parse_name(self):
@@ -134,10 +166,16 @@ class ATP:
         self.df = self.df.drop(self.df[self.df.score.str.contains('Apr')].index)
         self.df = self.df.drop(self.df[self.df.score.str.contains('Unfinished')].index)
         self.df = self.df.drop(self.df[self.df.score.str.contains('Feb')].index)
+        self.df = self.df.drop(self.df[self.df.score.str.contains('May')].index)
         self.df = self.df.drop(self.df[self.df.score.str.contains('Jun')].index)
         self.df = self.df.drop(self.df[self.df.score.str.contains('Jul')].index)
+        self.df = self.df.drop(self.df[self.df.score.str.contains('RE')].index)
+        self.df = self.df.drop(self.df[self.df.score.str.contains('>')].index)
         self.df = self.df.drop(self.df[self.df.score.str.contains('Played')].index)
         self.df = self.df.drop(self.df[self.df.score.str.contains('ABD')].index)
+        self.df = self.df.drop(self.df[self.df.score.str.contains('UNK')].index)
+        self.df = self.df.drop(self.df[self.df.score.str.contains('\?')].index)
+        self.df = self.df.drop(self.df[self.df.score.str.contains('nbs')].index)
         game_scores = self.df.score.str.split(' ', n=-1, expand=True)
         player_scores = None
         for col in game_scores.columns:
@@ -181,21 +219,21 @@ class ATP:
                 self.df = self.df.drop(columns=col)
         self.df['game_winner'] = 1
 
-
-
     def scramble_player1_player2_cols(self):
-        switch = 0
-        dict12 = {}
+        """
+        Player1 was the winner col, player2 is the loser col, must scramble that.
+        :return:
+        """
         cols1 = [c for c in self.df.columns if 'player1' in c]
         cols2 = [c for c in self.df.columns if 'player2' in c]
         cols2_targ = [c.replace('player1', 'player2') for c in cols1]
+        assert len(cols2) == len(cols2_targ)
         for c in cols2:
             assert c in cols2_targ
-        for c1, c2 in zip(cols1, cols2_targ):
-            dict12[c1] = c2
-            dict12[c2] = c1
+        copydf = self.df.copy()
         maskidx = [i for i in self.df.index if i % 2]
-        self.df.loc[maskidx, cols1 + cols2_targ] = self.df.loc[maskidx, cols2_targ + cols1].values
+        self.df.loc[maskidx, cols1] = copydf.loc[maskidx, cols2_targ].values
+        self.df.loc[maskidx, cols2_targ] = copydf.loc[maskidx, cols1].values
         self.df.loc[maskidx, 'game_winner'] = 2
 
     def drop_score(self):
@@ -210,5 +248,4 @@ if __name__ == '__main__':
     raw_parent = r'D:\Data\Sports\tennis\tennis_atp'
     save_parent = r'D:\Data\Sports\tennis\tennis_data'
     tennis = ATP(raw_parent, save_parent)
-    tennis.load_df(tennis.csvs[0])
     tennis.clean_main()

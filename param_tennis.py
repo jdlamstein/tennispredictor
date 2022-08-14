@@ -21,7 +21,7 @@ class Param:
         self.atp_dir = os.path.join(self.parent, 'tennis_atp')
         if props is None:
             self.batch_size = 128
-            self.epochs = 10
+            self.epochs = 100
             self.learning_rate = 1e-6
             self.optimizer = 'adam'
             self.momentum = 0.9  # sgd

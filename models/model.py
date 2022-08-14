@@ -17,7 +17,7 @@ class Model(LightningModule):
         self.learning_rate = learning_rate
 
         # Hardcode some dataset specific attributes
-        self.features = 37
+        self.features = 36
         self.num_classes = 2
         # self.transform = transforms.Compose(
         #     [

@@ -8,6 +8,7 @@ from torch.utils.data import TensorDataset, DataLoader
 import torch
 import torch.nn.functional as F
 
+
 class Elo:
     def __init__(self, csv):
         self.csv = csv
@@ -40,6 +41,7 @@ class Elo:
             self.elo[id2].append(elo_2)
             self.res.loc[i, ['player1_elo', 'player2_elo']] = [elo_1, elo_2]
         self.res.to_csv(self.csv)
+        return self.csv
 
     def calc_elo(self, rating_a, rating_b, winner, num_a_games):
         expected_a = 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
@@ -51,6 +53,7 @@ class Elo:
             K = 10
         rating_a_prime = rating_a + K * (winner - expected_a)
         return rating_a_prime
+
 
 class Glicko:
     def __init__(self, csv):
@@ -96,6 +99,8 @@ class Glicko:
             K = 10
         rating_a_prime = rating_a + K * (winner - expected_a)
         return rating_a_prime
+
+
 class TimePeriod:
     # Set year and enter time as sin(x* 2pi/365) cos(x*2pi/365)
     def __init__(self, csv):
@@ -107,6 +112,7 @@ class TimePeriod:
         self.get_year()
         self.get_day()
         self.df.to_csv(self.csv, index=False)
+        return self.csv
 
     def get_year(self):
         self.df['year'] = self.df.tourney_date // 10000
@@ -147,7 +153,6 @@ class Dataspring:
                 namelst.append(col)
         df = df.drop(columns=namelst)
         return df
-
 
     def get_col_types(self, df):
         types = []
@@ -223,9 +228,12 @@ class Dataspring:
     def build_dataset_with_labels(self):
         feats_train, feats_val, feats_test, labels_train, labels_val, labels_test = self.prepare_dataset()
 
-        dataset_train = TensorDataset(torch.Tensor(feats_train), F.one_hot(torch.Tensor(labels_train).to(torch.int64), self.p.output_size))
-        dataset_val = TensorDataset(torch.Tensor(feats_val), F.one_hot(torch.Tensor(labels_val).to(torch.int64), self.p.output_size))
-        dataset_test = TensorDataset(torch.Tensor(feats_test), F.one_hot(torch.Tensor(labels_test).to(torch.int64), self.p.output_size))
+        dataset_train = TensorDataset(torch.Tensor(feats_train),
+                                      F.one_hot(torch.Tensor(labels_train).to(torch.int64), self.p.output_size))
+        dataset_val = TensorDataset(torch.Tensor(feats_val),
+                                    F.one_hot(torch.Tensor(labels_val).to(torch.int64), self.p.output_size))
+        dataset_test = TensorDataset(torch.Tensor(feats_test),
+                                     F.one_hot(torch.Tensor(labels_test).to(torch.int64), self.p.output_size))
         return dataset_train, dataset_val, dataset_test
 
     def prepare_dataset(self):
@@ -293,22 +301,35 @@ class Dataspring:
             for drop_col in drop_cols:
                 if drop_col in col:
                     df = df.drop(columns=[col])
+        drop_label_cols = ['_ace', '_df',
+                           '_svpt', '_1stIn',
+                           '_1stWon', '_2ndWon',
+                           '_SvGms', '_bpSaved', '_bpFaced']
+        for col in cols:
+            for drop_label_col in drop_label_cols:
+                if drop_label_col in col:
+                    df = df.drop(columns=[col])
         df = df.drop(columns=['tourney_id'])
         df = df.drop(columns=['month'])
         df = df.drop(columns=['day'])
+        df = df.drop(columns=['minutes'])
         df = df.drop(columns=['tourney_date'])
         types = self.get_col_types(df)
-        df_train = df.iloc[0:int(len(df)*.6)]
-        df_val = df.iloc[int(len(df)*.6):int(len(df)*.8)]
-        df_test = df.iloc[int(len(df)*.8):]
+        df_train = df.iloc[0:int(len(df) * .6)]
+        df_val = df.iloc[int(len(df) * .6):int(len(df) * .8)]
+        df_test = df.iloc[int(len(df) * .8):]
         print('len train', len(df_train))
         print('len val', len(df_val))
         print('len test', len(df_test))
         labels_train = np.array(df_train.pop('game_winner') - 1)
         labels_val = np.array(df_val.pop('game_winner') - 1)
         labels_test = np.array(df_test.pop('game_winner') - 1)
+
+
+
         self.columns = df_train.columns
         return df_train, df_val, df_test, labels_train, labels_val, labels_test
+
 
     def process_df_deploy(self, df):
         df = df.sample(frac=1).reset_index(drop=True)
@@ -325,12 +346,14 @@ class Dataspring:
         labels = np.ones((len(df),))
         return df, labels
 
+
     @staticmethod
     def derive_and_norm(df):
         mean = df.mean(axis=0, skipna=True)
         std = df.std(axis=0, skipna=True)
         res = (df - mean) / std
         return res, mean, std
+
 
     @staticmethod
     def norm_df(df, mean, std):
@@ -435,7 +458,8 @@ class RecentMatches:
 if __name__ == '__main__':
     csv = r'D:\Data\Sports\tennis\tennis_data\atp_database.csv'
     Dat = Dataspring(csv)
-    Dat.build_dataset_with_labels()
+    dataset_train, dataset_val, dataset_test = Dat.build_dataset_with_labels()
+
 
     # E = Elo(csv)
     # E.populate_elo()
