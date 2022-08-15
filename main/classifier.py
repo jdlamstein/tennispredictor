@@ -26,6 +26,7 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 from sklearn.decomposition import PCA
 from sklearn.inspection import permutation_importance
+from joblib import dump, load
 
 class Classifier:
     def __init__(self, p, csv):
@@ -119,7 +120,13 @@ class Classifier:
             res[name] = [score_test]
             elapsed_time = time.time() - start_time
             print(f"Elapsed time to compute fit and test: {elapsed_time:.3f} seconds")
-
+            nm = name.replace(' ', '')
+            savename = os.path.join(self.p.model_dir, 'classifiers', self.p.timestring, f'{nm}.joblib')
+            savedir = os.path.join(self.p.model_dir, 'classifiers', self.p.timestring)
+            if not os.path.exists(savedir):
+                os.makedirs(savedir)
+            dump(clf, savename)
+            print(f'Saved {name} to {savename}')
             start_import_time = time.time()
             result = permutation_importance(
                 clf, feats_test, labels_test, n_repeats=5, random_state=42, n_jobs=3

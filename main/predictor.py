@@ -63,7 +63,6 @@ class Predictor:
         self.y = labels
 
     def split_data_df(self, seed, train_size):
-        assert np.all(self.X.index == self.y.index)
         X_train = self.X.sample(frac=train_size, random_state=seed)
         X_test = self.X.drop(X_train.index)
         y_train = self.y.loc[X_train.index]

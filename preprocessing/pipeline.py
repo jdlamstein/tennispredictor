@@ -243,6 +243,7 @@ class Dataspring:
 
         df_train, df_val, df_test, labels_train, labels_val, labels_test = self.process_df(df)
         print('train columns', pd.unique(df_train.columns))
+        print('len train columns', len(pd.unique(df_train.columns)))
 
         df_train, mean, std = self.derive_and_norm(df_train)
         df_val = self.norm_df(df_val, mean, std)

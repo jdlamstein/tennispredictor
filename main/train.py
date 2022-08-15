@@ -2,6 +2,7 @@
 Train model
 https://towardsdatascience.com/making-big-bucks-with-a-data-driven-sports-betting-strategy-6c21a6869171
 """
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 from models.model import Model
 from preprocessing.pipeline import Dataspring
@@ -37,12 +38,14 @@ class Train:
         test_loader = DataLoader(dataset_test, batch_size=self.p.batch_size)
         early_stop_callback = EarlyStopping(monitor="val_acc", min_delta=0.00, patience=4, verbose=False,
                                             mode="max")
+        checkpoint_callback = ModelCheckpoint(dirpath=os.path.join(self.p.model_dir, 'tennis-main', self.p.timestring),
+                                              save_top_k=3, monitor="val_loss")
 
         trainer = pl.Trainer(accelerator='gpu', devices=1,
                              logger=wandb_logger,
                              max_epochs=self.p.epochs,
                              default_root_dir=self.p.model_dir,
-                             callbacks=[early_stop_callback])
+                             callbacks=[early_stop_callback, checkpoint_callback])
         trainer.fit(model, train_loader, val_loader)
         trainer.test(model, test_loader)
 

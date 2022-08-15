@@ -9,7 +9,7 @@ class Param:
         self.val_len = 25910
         self.test_len = 25910
 
-        self.input_size = (37,)
+        self.input_size = (36,)
         self.output_size = 2
 
         self.parent = r'D:\Data\Sports\tennis'
