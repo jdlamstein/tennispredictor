@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
-
+__author__='Josh Lamstein'
 
 class Deploy:
     def __init__(self, p, ckpt_path, csv):

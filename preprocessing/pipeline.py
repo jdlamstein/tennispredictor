@@ -7,12 +7,15 @@ from tqdm import tqdm
 from torch.utils.data import TensorDataset, DataLoader
 import torch
 import torch.nn.functional as F
+import argparse
+
+slash = '\\' if os.name == 'nt' else '/'
 
 
 class Elo:
     def __init__(self, csv):
         self.csv = csv
-        self.df = pd.read_csv(self.csv)
+        self.df = pd.read_csv(self.csv, low_memory=False)
         self.elo = {}  # id key, list of elos
         self.df = self.df.sort_values(by=['tourney_date', 'round'])
         self.df.player1_elo = 1500
@@ -20,12 +23,9 @@ class Elo:
         self.res = self.df.copy()
 
     def populate_elo(self):
-        # chronologically
-        # init rating as 1500
-        # compete as a tree,
-        # update elo for next match
-        # store elo in dict per player
-        # update per row
+        """ Initialize all ratings as 1500. From the start of the data, chronologically view results of competitions.
+        From this victory tree, update the elo for the next match. Store the results for each player in a dictionary and
+        update per row."""
         for i, row in self.df.iterrows():
 
             id1 = row.player1_id
@@ -44,6 +44,7 @@ class Elo:
         return self.csv
 
     def calc_elo(self, rating_a, rating_b, winner, num_a_games):
+        """Calculate elo score"""
         expected_a = 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
         if num_a_games < 30 and rating_a < 2400:
             K = 40
@@ -56,6 +57,8 @@ class Elo:
 
 
 class Glicko:
+    """Glicko score is an alternative to elo"""
+
     def __init__(self, csv):
         self.csv = csv
         self.df = pd.read_csv(self.csv)
@@ -67,12 +70,6 @@ class Glicko:
         self.res = self.df.copy()
 
     def populate_elo(self):
-        # chronologically
-        # init rating as 1500
-        # compete as a tree,
-        # update elo for next match
-        # store elo in dict per player
-        # update per row
         for i, row in self.df.iterrows():
 
             id1 = row.player1_id
@@ -136,10 +133,10 @@ class TimePeriod:
 
 
 class Dataspring:
-    def __init__(self, csv):
-        self.p = param.Param()
+    def __init__(self, p, csv):
+        self.p = p
         self.csv = csv
-        self.name = csv.split('\\')[-1].split('.')[0]
+        self.name = csv.split(slash)[-1].split('.')[0]
         self.miss_lst = []
         self.ds_train = None
         self.ds_val = None
@@ -182,49 +179,6 @@ class Dataspring:
         print(cnt_uni)
         return types
 
-    # def csv_to_ds(self):
-    #     df = pd.read_csv(self.csv)
-    #     df_train, df_val, df_test, self.labels_train, self.labels_val, self.labels_test = self.process_df(df)
-    #     df_train.to_csv(self.csv_train)
-    #     df_val.to_csv(self.csv_val)
-    #     df_test.to_csv(self.csv_test)
-    #
-    #     self.ds_train = tf.data.experimental.make_csv_dataset(self.csv_train, batch_size=self.p.batch_size,
-    #                                                           column_names=df.columns)
-    #     self.ds_val = tf.data.experimental.make_csv_dataset(self.csv_val, batch_size=self.p.batch_size,
-    #                                                         column_names=df.columns)
-    #     self.ds_test = tf.data.experimental.make_csv_dataset(self.csv_test, batch_size=self.p.batch_size,
-    #                                                          column_names=df.columns)
-    #
-    # def dict_to_ds_with_labels(self):
-    #     df = pd.read_csv(self.csv)
-    #
-    #     df = self.remove_cols_with_name_in_them(df)
-    #
-    #     df_train, df_val, df_test, self.labels_train, self.labels_val, self.labels_test = self.process_df(df)
-    #     print('train columns', pd.unique(df_train.columns))
-    #
-    #     df_train, mean, std = self.derive_and_norm(df_train)
-    #     df_val = self.norm_df(df_val, mean, std)
-    #     df_test = self.norm_df(df_test, mean, std)
-    #     # todo: save mean and std for deployment, log in wandb
-    #     feats_train = {name: np.array(value)
-    #                    for name, value in df_train.items()}
-    #     feats_val = {name: np.array(value)
-    #                  for name, value in df_val.items()}
-    #     feats_test = {name: np.array(value)
-    #                   for name, value in df_test.items()}
-    #     print('feature length', len(feats_train))
-    #
-    #     if self.p.output_size==2:
-    #         self.labels_train = tf.one_hot(self.labels_train, 2)
-    #         self.labels_val = tf.one_hot(self.labels_val, 2)
-    #         self.labels_test = tf.one_hot(self.labels_test, 2)
-    #     self.ds_train = tf.data.Dataset.from_tensor_slices((feats_train, self.labels_train))
-    #     self.ds_val = tf.data.Dataset.from_tensor_slices((feats_val, self.labels_val))
-    #     self.ds_test = tf.data.Dataset.from_tensor_slices((feats_test, self.labels_test))
-    #     return feats_train, feats_val, feats_test
-
     def build_dataset_with_labels(self):
         feats_train, feats_val, feats_test, labels_train, labels_val, labels_test = self.prepare_dataset()
 
@@ -255,25 +209,6 @@ class Dataspring:
         print('feature length', len(feats_train))
         return feats_train, feats_val, feats_test, labels_train, labels_val, labels_test
 
-    # def dict_to_ds_deploy(self):
-    #     df = pd.read_csv(self.csv)
-    #     df_deploy, labels_deploy = self.process_df_deploy(df)
-    #     df_deploy, mean, std = self.derive_and_norm(df_deploy)
-    #     feats_deploy = {name: np.array(value)
-    #                     for name, value in df_deploy.items()}
-    #     print('feature length', len(feats_deploy))
-    #     self.ds_train = tf.data.Dataset.from_tensor_slices((feats_deploy, labels_deploy))
-    #     return feats_deploy, labels_deploy
-
-    def pandas_to_ds(self):
-        df = pd.read_csv(self.csv)
-        df_train, df_val, df_test, self.labels_train, self.labels_val, self.labels_test = self.process_df(df)
-
-        self.ds_train = tf.data.Dataset.from_tensor_slices((df_train.values, self.labels_train.values))
-        self.ds_val = tf.data.Dataset.from_tensor_slices((df_val.values, self.labels_val.values))
-        self.ds_test = tf.data.Dataset.from_tensor_slices((df_test.values, self.labels_test.values))
-        return None, None, None
-
     def datagen_base(self):
         self.ds_train = self.ds_train.shuffle(1000).batch(self.p.batch_size)
         self.ds_val = self.ds_val.shuffle(1000).batch(self.p.batch_size)
@@ -288,10 +223,15 @@ class Dataspring:
 
     def process_df(self, df):
         """
-        Get labels (game winner atm). Remove unnecessary columns.
-        Todo: Later include betting odds
+        Get labels (game winner). Remove unnecessary columns.
         :param df: data
         :return:
+            df_train: dataframe for training
+            df_val: dataframe for validation
+            df_test: dataframe for testing
+            labels_train: np.array labels for training
+            labels_val: np.array labels for validation
+            labels_test: np.array labels for testing
         """
         df = df.sort_values(by=['tourney_date', 'round'])
         df = df.fillna(-10)  # fill nan
@@ -315,6 +255,7 @@ class Dataspring:
         df = df.drop(columns=['day'])
         df = df.drop(columns=['minutes'])
         df = df.drop(columns=['tourney_date'])
+        # todo: return df and split in another function so I can use it for deploy also
         types = self.get_col_types(df)
         df_train = df.iloc[0:int(len(df) * .6)]
         df_val = df.iloc[int(len(df) * .6):int(len(df) * .8)]
@@ -326,11 +267,8 @@ class Dataspring:
         labels_val = np.array(df_val.pop('game_winner') - 1)
         labels_test = np.array(df_test.pop('game_winner') - 1)
 
-
-
         self.columns = df_train.columns
         return df_train, df_val, df_test, labels_train, labels_val, labels_test
-
 
     def process_df_deploy(self, df):
         df = df.sample(frac=1).reset_index(drop=True)
@@ -347,14 +285,12 @@ class Dataspring:
         labels = np.ones((len(df),))
         return df, labels
 
-
     @staticmethod
     def derive_and_norm(df):
         mean = df.mean(axis=0, skipna=True)
         std = df.std(axis=0, skipna=True)
         res = (df - mean) / std
         return res, mean, std
-
 
     @staticmethod
     def norm_df(df, mean, std):
@@ -435,7 +371,7 @@ class RecentMatches:
                 break
             else:
                 self.players[ident].pop(0)  # remove game from list, outside of 2 week window
-        dyear = year - prev_year
+        dyear = year - prev_year  # todo: use datetime delta
         dday = day - (prev_day - dyear * 365)
         weeks = dday // 14
         # weeks inactive
@@ -457,10 +393,12 @@ class RecentMatches:
 
 
 if __name__ == '__main__':
-    csv = r'D:\Data\Sports\tennis\tennis_data\atp_database.csv'
-    Dat = Dataspring(csv)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--csv', default='/Users/gandalf/Data/tennis/tennis_data/atp_database.csv')
+    args = parser.parse_args()
+    print(args)
+    Dat = Dataspring(args.csv)
     dataset_train, dataset_val, dataset_test = Dat.build_dataset_with_labels()
-
 
     # E = Elo(csv)
     # E.populate_elo()

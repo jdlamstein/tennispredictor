@@ -23,8 +23,10 @@ from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 from sklearn.decomposition import PCA
 from preprocessing.pipeline import Dataspring
 import matplotlib.pyplot as plt
+import argparse
+from param_tennis import Param
 
-
+__author__='Josh Lamstein'
 # matplotlib.interactive(False)
 # plt = matplotlib.pyplot
 
@@ -59,8 +61,8 @@ class Predictor:
         #     GaussianNB(),
         #     QuadraticDiscriminantAnalysis()]
 
-        self.X = data
-        self.y = labels
+        self.X = data  # pd.DataFrame
+        self.y = labels  # np array
 
     def split_data_df(self, seed, train_size):
         X_train = self.X.sample(frac=train_size, random_state=seed)
@@ -77,7 +79,7 @@ class Predictor:
 
         return X_train, y_train, X_test, y_test
 
-    def prediction(self, X_train, X_test, y_train, y_test, save_dir=None, save_bool=False):
+    def prediction(self, X_train, y_train, X_test, y_test, save_dir=None, save_bool=False):
         # for name, clf in zip(self.names, self.classifiers):
         for name, clf in self.classifiers.items():
             importances = []
@@ -159,20 +161,25 @@ class Predictor:
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--csv', default='/Users/gandalf/Data/tennis/tennis_data/atp_database.csv',
+                        help='Input csv generated from clean_data.py for training and analysis.')
+    parser.add_argument('--parentdir', default='/Users/gandalf/Data/tennis', help='Save directory')
+    parser.add_argument('--savedir', default='/Users/gandalf/Data/tennis/models/classifiers', help='Save directory')
+    args = parser.parse_args()
+    print(f"Arguments: {args}")
     DEBUG = False
-    csv = r'D:\Data\Sports\tennis\tennis_data\atp_database.csv'
-    save_dir = r'D:\Data\Sports\tennis\classifiers'
     save_bool = True
     train_size = 0.8
     seed = 200
-    Dat = Dataspring(csv)
-    df = pd.read_csv(csv)
-    df_train, df_val, df_test, labels_train, labels_val, labels_test = Dat.process_df(df)
+    Dat = Dataspring(Param(args.parentdir, props=None), args.csv)
+    df_train, df_val, df_test, labels_train, labels_val, labels_test = Dat.prepare_dataset()
     if DEBUG:
         df_train = df_train.iloc[:1000]
         labels_train = labels_train.iloc[:1000]
 
     Pred = Predictor(df_train, labels_train)
     # Pred.apply_pca()
-    X_train, y_train, X_test, y_test = Pred.split_data_df(seed, train_size)
-    Pred.prediction(X_train, y_train, X_test, y_test, save_dir, save_bool)
+
+    X_train, y_train, X_test, y_test = Pred.split_data_np(seed, test_size=1 - train_size)
+    Pred.prediction(X_train, y_train, X_test, y_test, args.savedir, save_bool)

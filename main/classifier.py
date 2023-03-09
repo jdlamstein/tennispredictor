@@ -27,6 +27,8 @@ from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 from sklearn.decomposition import PCA
 from sklearn.inspection import permutation_importance
 from joblib import dump, load
+import argparse
+__author__='Josh Lamstein'
 
 class Classifier:
     def __init__(self, p, csv):
@@ -34,8 +36,9 @@ class Classifier:
         self.csv = csv
 
     def linreg(self):
+        """Run linear regression on the dataset"""
 
-        Dat = Dataspring(self.csv)
+        Dat = Dataspring(self.p, self.csv)
         feats_train, feats_val, feats_test, labels_train, labels_val, labels_test = Dat.prepare_dataset()
         # savepath = os.path.join(self.p.model_dir, 'tennis_mlp_' + self.p.timestring + '.h5')
         regr = LinearRegression()
@@ -73,7 +76,7 @@ class Classifier:
 
     def classifiers(self, train_size=None):
         res = {}
-        Dat = Dataspring(self.csv)
+        Dat = Dataspring(self.p, self.csv)
         feats_train, feats_val, feats_test, labels_train, labels_val, labels_test = Dat.prepare_dataset()
         if train_size is not None:
             print(f'Setting train length to: {train_size}')
@@ -144,21 +147,46 @@ class Classifier:
             fig.tight_layout()
             plt.savefig(os.path.join(self.p.fig_dir, f'{name}_importance.tif'))
         pd.DataFrame(res).to_csv(os.path.join(self.p.model_dir, 'classifiers.csv'))
+        return self.p.timestring
+
+    def predictor(self, data=None, labels=None, classifier_timestring=None, classifier_name=None):
+        """Run classifier on new game or test set"""
+        # Load data for inference
+        if data is None:
+            Dat = Dataspring(self.p, self.csv)
+            feats_train, feats_val, feats_test, labels_train, labels_val, labels_test = Dat.prepare_dataset()
+        else:
+            feats_test = data
+            labels_test = labels
+
+        # Load target classifier
+        clf = load(os.path.join(self.p.model_dir, 'classifiers', classifier_timestring, f'{classifier_name}.joblib'))
+        if labels_test is not None:
+            score_test = clf.score(feats_test, labels_test)
+            print(f'Predict Score: {classifier_name} {score_test}')
+        preds = clf.predict(feats_test)
+        print(preds)
+        return preds
 
 
 if __name__ == '__main__':
     program_name = pyfiglet.figlet_format("Tennis Classifier", font="slant")
     print(program_name)
-    csv = r'D:\Data\Sports\tennis\tennis_data\atp_database.csv'
-
-    parser = argparse.ArgumentParser("Tennis Bets")
-    parser.add_argument('--csv', action="store",
-                        default=csv,
-                        help='processed data csv',
-                        dest='csv')
-
+    parser = argparse.ArgumentParser()
+    timestring = None
+    parser.add_argument('--csv',
+                        default='/Users/gandalf/Data/tennis/tennis_data/deploy.csv',
+                        # default='/Users/gandalf/Data/tennis/tennis_data/atp_database.csv',
+                        help='Input csv generated from clean_data.py for training and analysis.')
+    parser.add_argument('--timestring', default='2023_03_08_13_50_22', help='Input timestring, directory name of classifiers in model folder.')
+    parser.add_argument('--parentdir', default='/Users/gandalf/Data/tennis',
+                        help='Parent directory for tennis analysis')
+    parser.add_argument('--train_length', default=10000, help='Number of samples with which to train classifiers')
     args = parser.parse_args()
-    print('ARGS:\n', args)
-    Tr = Classifier(Param(None), args.csv)
+    print(f"Arguments: {args}")
+    Tr = Classifier(Param(datadir=args.parentdir, props=None), args.csv)
     # Tr.pca()
-    Tr.classifiers(1000)
+    # Tr.linreg()
+    # timestring = Tr.classifiers(args.train_length)
+    # todo: enter data and labels
+    Tr.predictor(classifier_timestring=args.timestring if timestring is None else timestring, classifier_name='AdaBoost')

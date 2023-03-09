@@ -1,6 +1,5 @@
 """
 Train model
-https://towardsdatascience.com/making-big-bucks-with-a-data-driven-sports-betting-strategy-6c21a6869171
 """
 from pytorch_lightning.callbacks import ModelCheckpoint
 
@@ -16,7 +15,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
 
-
+__author__='Josh Lamstein'
 class Train:
     def __init__(self, p, csv):
         self.p = p

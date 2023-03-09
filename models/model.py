@@ -7,6 +7,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader, random_split
 from torchmetrics import Accuracy
 from torchvision import transforms
+__author__='Josh Lamstein'
 
 class Model(LightningModule):
     def __init__(self, learning_rate=2e-4):

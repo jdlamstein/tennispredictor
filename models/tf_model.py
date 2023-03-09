@@ -9,7 +9,7 @@ import numpy as np
 import param_tennis as param
 from preprocessing.pipeline import Dataspring
 from tensorflow.keras.optimizers import Adam, SGD
-
+__author__='Josh Lamstein'
 
 class Net:
     def __init__(self, p):
