@@ -167,7 +167,8 @@ if __name__ == '__main__':
     pairings.append(Player_Pairings('Leandro Riedi', 'Alexandre Muller', '20230307', 3, 5, "Indian Wells"))
     pairings.append(Player_Pairings('Cristian Garin', 'Filip Misolic', '20230307', 3, 5, "Indian Wells"))
     pairings.append(Player_Pairings('Filip Misolic', 'Cristian Garin', '20230307', 3, 5, "Indian Wells"))
-    # player_pairings = [['Jordan Thompson', 'Daniil Medvedev', '20230309', 3],
-    #                    ['Altug Celikbilek', 'Vitaliy Sachko', '20230309', 3]]
+
+    # todo: pull competitions from web
+    # todo: fill out more data
     Trans = Transfer(p, args.csv)
     Trans.make_deploy(pairings)

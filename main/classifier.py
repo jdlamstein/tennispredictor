@@ -197,4 +197,5 @@ if __name__ == '__main__':
     # Tr.pca()
     # Tr.linreg()
     # timestring = Tr.classifiers(args.train_length)
+    # todo: switch player1 and player2 and check results
     Tr.predictor(deploy_csv=args.csv, meta_csv =meta_csv, classifier_timestring=args.timestring if timestring is None else timestring, classifier_name='AdaBoost')
