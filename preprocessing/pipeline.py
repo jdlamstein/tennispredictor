@@ -142,6 +142,8 @@ class Dataspring:
         self.ds_val = None
         self.ds_test = None
         self.columns = None
+        self.train_mean  = None
+        self.train_std = None
 
     def remove_cols_with_name_in_them(self, df):
         namelst = []
@@ -194,20 +196,40 @@ class Dataspring:
         df = pd.read_csv(self.csv)
 
         df = self.remove_cols_with_name_in_them(df)
-
-        df_train, df_val, df_test, labels_train, labels_val, labels_test = self.process_df(df)
+        df = self.process_df(df)
+        df_train, df_val, df_test, labels_train, labels_val, labels_test = self.train_val_test_split(df)
         print('train columns', pd.unique(df_train.columns))
         print('len train columns', len(pd.unique(df_train.columns)))
 
-        df_train, mean, std = self.derive_and_norm(df_train)
-        df_val = self.norm_df(df_val, mean, std)
-        df_test = self.norm_df(df_test, mean, std)
-        # todo: save mean and std for deployment, log in wandb
+        df_train, self.train_mean, self.train_std = self.derive_and_norm(df_train)
+        meta_df = pd.concat([self.train_mean, self.train_std], axis=1)
+        meta_df = meta_df.rename(columns={0:'train_mean', 1:'train_std'})
+        meta_df['index_name'] = meta_df.index
+        meta_df.to_csv(os.path.join(self.p.resources_dir, 'meta.csv'))
+        df_val = self.norm_df(df_val, self.train_mean, self.train_std)
+        df_test = self.norm_df(df_test, self.train_mean, self.train_std)
         feats_train = df_train.to_numpy()
+
         feats_val = df_val.to_numpy()
         feats_test = df_test.to_numpy()
         print('feature length', len(feats_train))
         return feats_train, feats_val, feats_test, labels_train, labels_val, labels_test
+
+    def load_metadata(self, csv):
+        meta_df = pd.read_csv(csv)
+        meta_df = meta_df.set_index('index_name')
+        self.train_mean = meta_df['train_mean']
+        self.train_std = meta_df['train_std']
+    def prepare_dataset_deploy(self):
+        df = pd.read_csv(self.csv)
+        player_names = df[['player1_name', 'player2_name']]
+        df = self.remove_cols_with_name_in_them(df)
+        df = df.drop(columns='game_winner')
+        df = self.process_df(df)
+        df_deploy, lbls = self.prepare_deploy(df, has_labels=False)
+        df_deploy = self.norm_df(df_deploy, self.train_mean, self.train_std)
+        feats_deploy = df_deploy.to_numpy()
+        return feats_deploy, lbls, player_names
 
     def datagen_base(self):
         self.ds_train = self.ds_train.shuffle(1000).batch(self.p.batch_size)
@@ -255,8 +277,8 @@ class Dataspring:
         df = df.drop(columns=['day'])
         df = df.drop(columns=['minutes'])
         df = df.drop(columns=['tourney_date'])
-        # todo: return df and split in another function so I can use it for deploy also
-        types = self.get_col_types(df)
+        return df
+    def train_val_test_split(self, df):
         df_train = df.iloc[0:int(len(df) * .6)]
         df_val = df.iloc[int(len(df) * .6):int(len(df) * .8)]
         df_test = df.iloc[int(len(df) * .8):]
@@ -270,20 +292,12 @@ class Dataspring:
         self.columns = df_train.columns
         return df_train, df_val, df_test, labels_train, labels_val, labels_test
 
-    def process_df_deploy(self, df):
-        df = df.sample(frac=1).reset_index(drop=True)
-        df = df.fillna(-10)  # fill nan
-        print('shape', df.shape)
-        cols = df.columns
-
-        for col in cols:
-            if 'player1_score' in col or 'player2_score' in col or 'Unnamed' in col:
-                df = df.drop(columns=[col])
-        df = df.drop(columns=['tourney_id'])
-        types = self.get_col_types(df)
-        assert len(types) == len(df.columns), f'{len(types)} {len(df.columns)}'
-        labels = np.ones((len(df),))
-        return df, labels
+    def prepare_deploy(self, df_deploy, has_labels=False):
+        if has_labels:
+            labels_deploy = np.array(df_deploy.pop('game_winner') - 1)
+        else:
+            labels_deploy = None
+        return df_deploy, labels_deploy
 
     @staticmethod
     def derive_and_norm(df):

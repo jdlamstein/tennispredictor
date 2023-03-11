@@ -43,7 +43,7 @@ class Transfer:
         length = len(player_pairings)
         for key in self.d.keys():
             if len(self.d[key])==0:
-                self.d[key] = [0] * length
+                self.d[key] = [-10] * length
         data = pd.DataFrame(self.d)
         if savebool:
             savepath = os.path.join(self.p.data_dir, 'deploy.csv')
@@ -163,6 +163,10 @@ if __name__ == '__main__':
     pairings = []
     pairings.append(Player_Pairings('Jordan Thompson', 'Daniil Medvedev', '20230309', 3, 5, "Indian Wells"))
     pairings.append(Player_Pairings('Altug Celikbilek', 'Vitaliy Sachko', '20230309', 3, 5, "Indian Wells"))
+    pairings.append(Player_Pairings('Pablo Andujar', 'Nuno Borges', '20230307', 3, 5, "Indian Wells"))
+    pairings.append(Player_Pairings('Leandro Riedi', 'Alexandre Muller', '20230307', 3, 5, "Indian Wells"))
+    pairings.append(Player_Pairings('Cristian Garin', 'Filip Misolic', '20230307', 3, 5, "Indian Wells"))
+    pairings.append(Player_Pairings('Filip Misolic', 'Cristian Garin', '20230307', 3, 5, "Indian Wells"))
     # player_pairings = [['Jordan Thompson', 'Daniil Medvedev', '20230309', 3],
     #                    ['Altug Celikbilek', 'Vitaliy Sachko', '20230309', 3]]
     Trans = Transfer(p, args.csv)

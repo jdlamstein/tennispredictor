@@ -149,15 +149,19 @@ class Classifier:
         pd.DataFrame(res).to_csv(os.path.join(self.p.model_dir, 'classifiers.csv'))
         return self.p.timestring
 
-    def predictor(self, data=None, labels=None, classifier_timestring=None, classifier_name=None):
+    def predictor(self, deploy_csv, meta_csv=None, classifier_timestring=None, classifier_name=None):
         """Run classifier on new game or test set"""
         # Load data for inference
-        if data is None:
+        player_names = None
+        if deploy_csv is None:
             Dat = Dataspring(self.p, self.csv)
             feats_train, feats_val, feats_test, labels_train, labels_val, labels_test = Dat.prepare_dataset()
         else:
-            feats_test = data
-            labels_test = labels
+            Dat = Dataspring(self.p, deploy_csv)
+            Dat.load_metadata(meta_csv)
+            feats_deploy, lbls, player_names = Dat.prepare_dataset_deploy()
+            feats_test = feats_deploy
+            labels_test = lbls
 
         # Load target classifier
         clf = load(os.path.join(self.p.model_dir, 'classifiers', classifier_timestring, f'{classifier_name}.joblib'))
@@ -165,7 +169,10 @@ class Classifier:
             score_test = clf.score(feats_test, labels_test)
             print(f'Predict Score: {classifier_name} {score_test}')
         preds = clf.predict(feats_test)
-        print(preds)
+        for i, pred in enumerate(preds):
+            print(f'{player_names.player1_name.iloc[i]} vs {player_names.player2_name.iloc[i]} : {pred}')
+        print(f'predictions: {preds}')
+
         return preds
 
 
@@ -184,9 +191,10 @@ if __name__ == '__main__':
     parser.add_argument('--train_length', default=10000, help='Number of samples with which to train classifiers')
     args = parser.parse_args()
     print(f"Arguments: {args}")
-    Tr = Classifier(Param(datadir=args.parentdir, props=None), args.csv)
+    p = Param(datadir=args.parentdir, props=None)
+    meta_csv = os.path.join(p.resources_dir, 'meta.csv')
+    Tr = Classifier(p, args.csv)
     # Tr.pca()
     # Tr.linreg()
     # timestring = Tr.classifiers(args.train_length)
-    # todo: enter data and labels
-    Tr.predictor(classifier_timestring=args.timestring if timestring is None else timestring, classifier_name='AdaBoost')
+    Tr.predictor(deploy_csv=args.csv, meta_csv =meta_csv, classifier_timestring=args.timestring if timestring is None else timestring, classifier_name='AdaBoost')
