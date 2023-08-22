@@ -23,5 +23,3 @@ Activate the virtual environment.
 In tennispredictor/preprocessing, run
 
 python clean_data.py --tennisdir "/path/to/data/tennis_atp" --datadir "/path/to/your/data/directory"
-
-# Not finished, in progress!
