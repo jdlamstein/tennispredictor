@@ -169,6 +169,6 @@ if __name__ == '__main__':
     pairings.append(Player_Pairings('Filip Misolic', 'Cristian Garin', '20230307', 3, 5, "Indian Wells"))
 
     # todo: pull competitions from web
-    # todo: fill out more data
+
     Trans = Transfer(p, args.csv)
     Trans.make_deploy(pairings)
