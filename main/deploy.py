@@ -43,19 +43,6 @@ class Deploy:
                              default_root_dir=self.p.model_dir)
         trainer.test(model, test_loader)
 
-    # def get_feature_importance(self, j, n):
-    #     s = accuracy_score(y_test, y_pred)  # baseline score
-    #     total = 0.0
-    #     for i in range(n):
-    #         perm = np.random.permutation(range(X_test.shape[0]))
-    #         X_test_ = X_test.copy()
-    #         X_test_[:, j] = X_test[perm, j]
-    #         y_pred_ = clf.predict(X_test_)
-    #         s_ij = accuracy_score(y_test, y_pred_)
-    #         total += s_ij
-    #     return s - total / n
-
-
 if __name__ == '__main__':
     result = pyfiglet.figlet_format("Tennis Deploy", font="slant")
     print(result)

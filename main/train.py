@@ -35,7 +35,7 @@ class Train:
         train_loader = DataLoader(dataset_train, batch_size=self.p.batch_size, shuffle=True)
         val_loader = DataLoader(dataset_val, batch_size=self.p.batch_size)
         test_loader = DataLoader(dataset_test, batch_size=self.p.batch_size)
-        early_stop_callback = EarlyStopping(monitor="val_acc", min_delta=0.00, patience=4, verbose=False,
+        early_stop_callback = EarlyStopping(monitor="val_acc", min_delta=0.01, patience=4, verbose=False,
                                             mode="max")
         checkpoint_callback = ModelCheckpoint(dirpath=os.path.join(self.p.model_dir, 'tennis-main', self.p.timestring),
                                               save_top_k=3, monitor="val_loss")

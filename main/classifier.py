@@ -182,20 +182,32 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     timestring = None
     parser.add_argument('--csv',
-                        default='/Users/gandalf/Data/tennis/tennis_data/deploy.csv',
-                        # default='/Users/gandalf/Data/tennis/tennis_data/atp_database.csv',
+                        # default='/Users/gandalf/Data/tennis/tennis_data/deploy.csv',
+                        default='/Users/gandalf/Data/tennis/tennis_data/atp_database.csv',
                         help='Input csv generated from clean_data.py for training and analysis.')
     parser.add_argument('--timestring', default='2023_03_08_13_50_22', help='Input timestring, directory name of classifiers in model folder.')
-    parser.add_argument('--parentdir', default='/Users/gandalf/Data/tennis',
+    parser.add_argument('--datadir', default='/Users/gandalf/Data/tennis',
                         help='Parent directory for tennis analysis')
+    parser.add_argument('--classifier_name', default='AdaBoost', choices=[
+            "Nearest Neighbors",
+            "Linear SVM",
+            "Gaussian Process",
+            "Decision Tree",
+            "Random Forest",
+            "Neural Net",
+            "AdaBoost",
+            "Naive Bayes",
+            "QDA",
+        ],
+                        help='Name classifier to run data on.')
     parser.add_argument('--train_length', default=10000, help='Number of samples with which to train classifiers')
     args = parser.parse_args()
     print(f"Arguments: {args}")
-    p = Param(datadir=args.parentdir, props=None)
+    p = Param(datadir=args.datadir, props=None)
     meta_csv = os.path.join(p.resources_dir, 'meta.csv')
     Tr = Classifier(p, args.csv)
-    # Tr.pca()
-    # Tr.linreg()
-    # timestring = Tr.classifiers(args.train_length)
-    # todo: switch player1 and player2 and check results
-    Tr.predictor(deploy_csv=args.csv, meta_csv =meta_csv, classifier_timestring=args.timestring if timestring is None else timestring, classifier_name='AdaBoost')
+    if args.timestring is None or len(args.timestring) <1:
+        new_timestring = Tr.classifiers(train_size=args.train_length)
+        print(f'Classifiers saved under timestring: {new_timestring}')
+    else:
+        Tr.predictor(deploy_csv=args.csv, meta_csv =meta_csv, classifier_timestring=args.timestring, classifier_name='AdaBoost')

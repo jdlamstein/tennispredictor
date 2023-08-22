@@ -48,6 +48,7 @@ class Transfer:
         if savebool:
             savepath = os.path.join(self.p.data_dir, 'deploy.csv')
             data.to_csv(savepath)
+            print(f'Saved deploy data to {savepath}')
         return data
 
     def get_transferable_feats(self, df, player_name, num, tourney_date=None):
