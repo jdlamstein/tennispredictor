@@ -155,13 +155,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--csv', default='/Users/gandalf/Data/tennis/tennis_data/atp_database.csv',
                         help='Input csv generated from clean_data.py for training and analysis.')
-    parser.add_argument('--parentdir', default='/Users/gandalf/Data/tennis',
+    parser.add_argument('--rootdir', default='/Users/gandalf/Data/tennis',
                         help='Parent directory for tennis analysis')
     args = parser.parse_args()
     print(f"Arguments: {args}")
-    p = Param(datadir=args.parentdir)
+    p = Param(rootdir=args.rootdir)
     Player_Pairings = namedtuple('Player_Pairings', 'player1 player2 tourney_date surface best_of tourney_name')
     pairings = []
+    # pairings.append(Player_Pairings(player1, player2, tourney date, surface, best of, tourney name))
     pairings.append(Player_Pairings('Jordan Thompson', 'Daniil Medvedev', '20230309', 3, 5, "Indian Wells"))
     pairings.append(Player_Pairings('Altug Celikbilek', 'Vitaliy Sachko', '20230309', 3, 5, "Indian Wells"))
     pairings.append(Player_Pairings('Pablo Andujar', 'Nuno Borges', '20230307', 3, 5, "Indian Wells"))

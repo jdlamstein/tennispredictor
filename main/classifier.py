@@ -182,11 +182,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     timestring = None
     parser.add_argument('--csv',
-                        # default='/Users/gandalf/Data/tennis/tennis_data/deploy.csv',
-                        default='/Users/gandalf/Data/tennis/tennis_data/atp_database.csv',
+                        default='/Users/gandalf/Data/tennis/tennis_data/deploy.csv',
+                        # default='/Users/gandalf/Data/tennis/tennis_data/atp_database.csv',
                         help='Input csv generated from clean_data.py for training and analysis.')
     parser.add_argument('--timestring', default='2023_03_08_13_50_22', help='Input timestring, directory name of classifiers in model folder.')
-    parser.add_argument('--datadir', default='/Users/gandalf/Data/tennis',
+    parser.add_argument('--rootdir', default='/Users/gandalf/Data/tennis',
                         help='Parent directory for tennis analysis')
     parser.add_argument('--classifier_name', default='AdaBoost', choices=[
             "Nearest Neighbors",
@@ -203,7 +203,7 @@ if __name__ == '__main__':
     parser.add_argument('--train_length', default=10000, help='Number of samples with which to train classifiers')
     args = parser.parse_args()
     print(f"Arguments: {args}")
-    p = Param(datadir=args.datadir, props=None)
+    p = Param(rootdir=args.rootdir, props=None)
     meta_csv = os.path.join(p.resources_dir, 'meta.csv')
     Tr = Classifier(p, args.csv)
     if args.timestring is None or len(args.timestring) <1:

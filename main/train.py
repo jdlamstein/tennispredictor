@@ -28,7 +28,7 @@ class Train:
         wandb_logger.experiment.config['optimizer'] = self.p.optimizer
         wandb_logger.experiment.config['epochs'] = self.p.epochs
         wandb_logger.experiment.config['batch_size'] = self.p.batch_size
-        Dat = Dataspring(self.csv)
+        Dat = Dataspring(self.p, self.csv)
         # savepath = os.path.join(self.p.model_dir, 'tennis_mlp_' + self.p.timestring + '.h5')
         dataset_train, dataset_val, dataset_test = Dat.build_dataset_with_labels()
         model = Model(self.p.learning_rate)
@@ -64,17 +64,19 @@ class Train:
 if __name__ == '__main__':
     result = pyfiglet.figlet_format("Tennis Train", font="slant")
     print(result)
-    csv = r'D:\Data\Sports\tennis\tennis_data\atp_database.csv'
+    csv = '/Users/gandalf/Data/tennis/tennis_data/atp_database.csv'
 
     parser = argparse.ArgumentParser("Tennis Bets")
     parser.add_argument('--csv', action="store",
                         default=csv,
                         help='processed data csv',
                         dest='csv')
+    parser.add_argument('--rootdir', default='/Users/gandalf/Data/tennis',
+                        help='Parent directory for tennis analysis')
 
     args = parser.parse_args()
     print('ARGS:\n', args)
-    Tr = Train(Param(None), args.csv)
+    Tr = Train(Param(args.rootdir), args.csv)
     Tr.train()
-    # todo: incorportate odds, should bet and how much
+    # todo: incorporate odds, should bet and how much
     # todo: data tests

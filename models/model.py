@@ -41,8 +41,8 @@ class Model(LightningModule):
             nn.Linear(128, 2),
         )
 
-        self.val_accuracy = Accuracy()
-        self.test_accuracy = Accuracy()
+        self.val_accuracy = Accuracy(task='binary')
+        self.test_accuracy = Accuracy(task='binary')
 
     def forward(self, x):
         x = self.model(x)

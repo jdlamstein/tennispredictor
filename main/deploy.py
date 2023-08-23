@@ -30,7 +30,7 @@ class Deploy:
         wandb_logger.experiment.config['optimizer'] = self.p.optimizer
         wandb_logger.experiment.config['epochs'] = self.p.epochs
         wandb_logger.experiment.config['batch_size'] = self.p.batch_size
-        Dat = Dataspring(self.csv)
+        Dat = Dataspring(self.p, self.csv)
         # savepath = os.path.join(self.p.model_dir, 'tennis_mlp_' + self.p.timestring + '.h5')
         dataset_train, dataset_val, dataset_test = Dat.build_dataset_with_labels()
         _model = Model(self.p.learning_rate)
@@ -46,7 +46,8 @@ class Deploy:
 if __name__ == '__main__':
     result = pyfiglet.figlet_format("Tennis Deploy", font="slant")
     print(result)
-    csv = r'D:\Data\Sports\tennis\tennis_data\atp_database.csv'
+    # csv = r'D:\Data\Sports\tennis\tennis_data\atp_database.csv'
+    csv = '/Users/gandalf/Data/tennis/tennis_data/deploy.csv'
     ckpt_path = r'D:\Data\Sports\tennis\models\tennis-main\2022_08_15_10_15_18\epoch=3-step=3312.ckpt'
     parser = argparse.ArgumentParser("Tennis Bets")
     parser.add_argument('--csv', action="store",
@@ -57,8 +58,10 @@ if __name__ == '__main__':
                         default=ckpt_path,
                         help='processed data csv',
                         dest='ckpt_path')
+    parser.add_argument('--rootdir', default='/Users/gandalf/Data/tennis',
+                        help='Parent directory for tennis analysis')
 
     args = parser.parse_args()
     print('ARGS:\n', args)
-    Dep = Deploy(Param(None), args.model_path, args.csv)
+    Dep = Deploy(Param(args.rootdir), args.ckpt_path, args.csv)
     Dep.deploy()

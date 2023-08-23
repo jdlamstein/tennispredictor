@@ -4,7 +4,7 @@ import datetime
 
 __author__='Josh Lamstein'
 class Param:
-    def __init__(self, datadir, props=None):
+    def __init__(self, rootdir, props=None):
         self.train_len = 120913
         self.val_len = 25910
         self.test_len = 25910
@@ -12,9 +12,8 @@ class Param:
         self.input_size = (36,)
         self.output_size = 2
 
-        self.parent = datadir
+        self.parent = rootdir
         self.timestring = update_timestring()
-        self.tfrecord_dir = os.path.join(self.parent, 'tfrecords')
         self.model_dir = os.path.join(self.parent, 'models')
         self.data_dir = os.path.join(self.parent, 'tennis_data')
         self.resources_dir = os.path.join(self.parent, 'tennis_resources')
@@ -35,7 +34,7 @@ class Param:
             self.momentum = props['momentum']
             self.nesterov = props['nesterov']
 
-        self.dirs = [self.tfrecord_dir, self. model_dir, self.resources_dir, self.data_dir, self.fig_dir, self.atp_dir]
+        self.dirs = [self. model_dir, self.resources_dir, self.data_dir, self.fig_dir, self.atp_dir]
         for d in self.dirs:
             if not os.path.exists(d):
                 os.mkdir(d)
