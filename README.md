@@ -64,3 +64,25 @@ To deploy on the neural network, run
     --ckpt_path /path/to/model
     --rootdir /path/to/your/analysis/dir
 
+## Results
+
+### Classifiers
+
+Test Set Scores:
+- Linear SVM 0.9275
+- Decision Tree 0.9207
+- Random Forest 0.8714
+- AdaBoost 0.926
+- Neural Net 0.9003
+- Nearest Neighbors 0.7149
+- Naive Bayes 0.9304
+- QDA 0.9166
+
+The classifiers scored between 90-92% accuracy on the test set save for the Nearest Neighbors
+classifier, perhaps due to the high dimensionality of the feature space. 
+
+Analyzing feature importances with permutations and Mean Accuracy Decrease, scoring with
+Negative Mean Squared Error, it seems winning streaks and losing streaks were critical across
+all classifiers. ELO, handedness, and seed affected some classifiers. 
+
+![Naive Bayes Feature Importance Figure](/results/AdaBoost_neg_mean_squared_error_importance.png)

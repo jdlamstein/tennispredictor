@@ -1,34 +1,31 @@
 """Linear regression"""
 
-import time
+import argparse
 import os
-import pandas as pd
-from sklearn.linear_model import LinearRegression
-import numpy as np
-from preprocessing.pipeline import Dataspring
-import pyfiglet
-import argparse
-from param_tennis import Param
-from sklearn.metrics import mean_squared_error, r2_score
+import time
+
 import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.datasets import make_moons, make_circles, make_classification
-from sklearn.neural_network import MLPClassifier
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.svm import SVC
-from sklearn.gaussian_process import GaussianProcessClassifier
-from sklearn.gaussian_process.kernels import RBF
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
-from sklearn.naive_bayes import GaussianNB
-from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
-from sklearn.decomposition import PCA
-from sklearn.inspection import permutation_importance
+import numpy as np
+import pandas as pd
+import pyfiglet
 from joblib import dump, load
-import argparse
-__author__='Josh Lamstein'
+from sklearn.decomposition import PCA
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.inspection import permutation_importance
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
+
+from param_tennis import Param
+from preprocessing.pipeline import Dataspring
+
+__author__ = 'Josh Lamstein'
+
 
 class Classifier:
     def __init__(self, p, csv):
@@ -88,7 +85,7 @@ class Classifier:
             "Nearest Neighbors",
             "Linear SVM",
             # "RBF SVM",
-            "Gaussian Process",
+            # "Gaussian Process",
             "Decision Tree",
             "Random Forest",
             "Neural Net",
@@ -101,7 +98,7 @@ class Classifier:
             KNeighborsClassifier(3),
             SVC(kernel="linear", C=0.025),
             # SVC(gamma=2, C=1),
-            GaussianProcessClassifier(1.0 * RBF(1.0)),
+            # GaussianProcessClassifier(1.0 * RBF(1.0)),
             DecisionTreeClassifier(max_depth=5),
             RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
             MLPClassifier(alpha=1, max_iter=1000),
@@ -131,21 +128,25 @@ class Classifier:
             dump(clf, savename)
             print(f'Saved {name} to {savename}')
             start_import_time = time.time()
-            result = permutation_importance(
-                clf, feats_test, labels_test, n_repeats=5, random_state=42, n_jobs=3
+            scoring = ['r2', 'neg_mean_absolute_percentage_error', 'neg_mean_squared_error']
+            r_multi = permutation_importance(
+                clf, feats_test, labels_test, n_repeats=5, random_state=42, n_jobs=3, scoring=scoring
             )
             # importances = clf.feature_importances_
             # std = np.std([tree.feature_importances_ for tree in clf.estimators_], axis=0)
             elapsed_time = time.time() - start_import_time
             print(f"Elapsed time to compute the importances: {elapsed_time:.3f} seconds")
-            forest_importances = pd.Series(result.importances_mean, index=feature_names)
+            for metric in r_multi:
+                result = r_multi[metric]
+                forest_importances = pd.Series(result.importances_mean, index=feature_names)
 
-            fig, ax = plt.subplots()
-            forest_importances.plot.bar(yerr=result.importances_std, ax=ax)
-            ax.set_title(f"{name}: Feature importances using MDI")
-            ax.set_ylabel("Mean decrease in impurity")
-            fig.tight_layout()
-            plt.savefig(os.path.join(self.p.fig_dir, f'{name}_importance.tif'))
+                fig, ax = plt.subplots()
+                forest_importances.plot.bar(yerr=result.importances_std, ax=ax)
+                ax.set_title(f"Feature Importances using Permutation on {name}")
+                ax.set_ylabel("Mean Accuracy Decrease")
+                fig.tight_layout()
+                plt.savefig(os.path.join(self.p.fig_dir, f'{name}_{metric}_importance.png'))
+
         pd.DataFrame(res).to_csv(os.path.join(self.p.model_dir, 'classifiers.csv'))
         return self.p.timestring
 
@@ -182,23 +183,25 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     timestring = None
     parser.add_argument('--csv',
-                        default='/Users/gandalf/Data/tennis/tennis_data/deploy.csv',
-                        # default='/Users/gandalf/Data/tennis/tennis_data/atp_database.csv',
+                        # default='/Users/gandalf/Data/tennis/tennis_data/deploy.csv',
+                        default='/Users/gandalf/Data/tennis/tennis_data/atp_database.csv',
                         help='Input csv generated from clean_data.py for training and analysis.')
-    parser.add_argument('--timestring', default='2023_03_08_13_50_22', help='Input timestring, directory name of classifiers in model folder.')
+    # parser.add_argument('--timestring', default='2023_03_08_13_50_22', help='Input timestring, directory name of classifiers in model folder.')
+    parser.add_argument('--timestring', default='',
+                        help='Input timestring, directory name of classifiers in model folder.')
     parser.add_argument('--rootdir', default='/Users/gandalf/Data/tennis',
                         help='Parent directory for tennis analysis')
     parser.add_argument('--classifier_name', default='AdaBoost', choices=[
-            "Nearest Neighbors",
-            "Linear SVM",
-            "Gaussian Process",
-            "Decision Tree",
-            "Random Forest",
-            "Neural Net",
-            "AdaBoost",
-            "Naive Bayes",
-            "QDA",
-        ],
+        "Nearest Neighbors",
+        "Linear SVM",
+        "Gaussian Process",
+        "Decision Tree",
+        "Random Forest",
+        "Neural Net",
+        "AdaBoost",
+        "Naive Bayes",
+        "QDA",
+    ],
                         help='Name classifier to run data on.')
     parser.add_argument('--train_length', default=10000, help='Number of samples with which to train classifiers')
     args = parser.parse_args()
@@ -206,8 +209,9 @@ if __name__ == '__main__':
     p = Param(rootdir=args.rootdir, props=None)
     meta_csv = os.path.join(p.resources_dir, 'meta.csv')
     Tr = Classifier(p, args.csv)
-    if args.timestring is None or len(args.timestring) <1:
+    if args.timestring is None or len(args.timestring) < 1:
         new_timestring = Tr.classifiers(train_size=args.train_length)
         print(f'Classifiers saved under timestring: {new_timestring}')
     else:
-        Tr.predictor(deploy_csv=args.csv, meta_csv =meta_csv, classifier_timestring=args.timestring, classifier_name='AdaBoost')
+        Tr.predictor(deploy_csv=args.csv, meta_csv=meta_csv, classifier_timestring=args.timestring,
+                     classifier_name='AdaBoost')
