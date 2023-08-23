@@ -85,4 +85,4 @@ Analyzing feature importances with permutations and Mean Accuracy Decrease, scor
 Negative Mean Squared Error, it seems winning streaks and losing streaks were critical across
 all classifiers. ELO, handedness, and seed affected some classifiers. 
 
-![Naive Bayes Feature Importance Figure](/results/Naive Bayes_neg_mean_squared_error_importance.png) ![Adaboost Feature Importance Figure](/results/AdaBoost_neg_mean_squared_error_importance.png)
+![Naive Bayes Feature Importance Figure](/results/Naive_Bayes_neg_mean_squared_error_importance.png) ![Adaboost Feature Importance Figure](/results/AdaBoost_neg_mean_squared_error_importance.png)
