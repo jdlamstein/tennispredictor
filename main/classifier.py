@@ -20,6 +20,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.calibration import CalibratedClassifierCV
 
 from param_tennis import Param
 from preprocessing.pipeline import Dataspring
@@ -113,8 +114,14 @@ class Classifier:
             # ax = plt.subplot(len(datasets), len(classifiers) + 1, i)
             start_time = time.time()
             clf.fit(feats_train, labels_train)
+
+            # Calibrate the classifier using validation set
+            print(f'Calibrating {name} probabilities...')
+            calibrated_clf = CalibratedClassifierCV(clf, method='isotonic', cv='prefit')
+            calibrated_clf.fit(feats_val, labels_val)
+
             # score_val = clf.score(feats_val, labels_val)
-            score_test = clf.score(feats_test, labels_test)
+            score_test = calibrated_clf.score(feats_test, labels_test)
             # print(f'val: {name} {score_val}')
             print(f'test: {name} {score_test}')
             res[name] = [score_test]
@@ -125,8 +132,8 @@ class Classifier:
             savedir = os.path.join(self.p.model_dir, 'classifiers', self.p.timestring)
             if not os.path.exists(savedir):
                 os.makedirs(savedir)
-            dump(clf, savename)
-            print(f'Saved {name} to {savename}')
+            dump(calibrated_clf, savename)
+            print(f'Saved calibrated {name} to {savename}')
             start_import_time = time.time()
             scoring = ['r2', 'neg_mean_absolute_percentage_error', 'neg_mean_squared_error']
             r_multi = permutation_importance(
@@ -150,7 +157,7 @@ class Classifier:
         pd.DataFrame(res).to_csv(os.path.join(self.p.model_dir, 'classifiers.csv'))
         return self.p.timestring
 
-    def predictor(self, deploy_csv, meta_csv=None, classifier_timestring=None, classifier_name=None):
+    def predictor(self, deploy_csv, meta_csv=None, classifier_timestring=None, classifier_name=None, output_probabilities=True):
         """Run classifier on new game or test set"""
         # Load data for inference
         player_names = None
@@ -169,12 +176,39 @@ class Classifier:
         if labels_test is not None:
             score_test = clf.score(feats_test, labels_test)
             print(f'Predict Score: {classifier_name} {score_test}')
-        preds = clf.predict(feats_test)
-        for i, pred in enumerate(preds):
-            print(f'{player_names.player1_name.iloc[i]} vs {player_names.player2_name.iloc[i]} : {pred}')
-        print(f'predictions: {preds}')
 
-        return preds
+        # Get probability predictions
+        if output_probabilities:
+            probs = clf.predict_proba(feats_test)
+            preds = clf.predict(feats_test)
+
+            results = []
+            for i in range(len(preds)):
+                result = {
+                    'player1_name': player_names.player1_name.iloc[i],
+                    'player2_name': player_names.player2_name.iloc[i],
+                    'predicted_winner': int(preds[i]) + 1,  # Convert 0/1 to 1/2
+                    'player1_win_prob': probs[i][0],
+                    'player2_win_prob': probs[i][1]
+                }
+                results.append(result)
+                print(f'{result["player1_name"]} vs {result["player2_name"]} - '
+                      f'Winner: Player {result["predicted_winner"]} - '
+                      f'Probabilities: P1={result["player1_win_prob"]:.3f}, P2={result["player2_win_prob"]:.3f}')
+
+            # Save to CSV
+            results_df = pd.DataFrame(results)
+            output_path = os.path.join(self.p.data_dir, f'predictions_{classifier_timestring}.csv')
+            results_df.to_csv(output_path, index=False)
+            print(f'\nSaved predictions with probabilities to {output_path}')
+
+            return results_df
+        else:
+            preds = clf.predict(feats_test)
+            for i, pred in enumerate(preds):
+                print(f'{player_names.player1_name.iloc[i]} vs {player_names.player2_name.iloc[i]} : {pred}')
+            print(f'predictions: {preds}')
+            return preds
 
 
 if __name__ == '__main__':
