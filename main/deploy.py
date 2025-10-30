@@ -23,7 +23,7 @@ class Deploy:
         self.ckpt_path = ckpt_path
         self.csv = csv
 
-    def deploy(self):
+    def deploy(self, output_probabilities=True):
         wandb_logger = WandbLogger()
         wandb_logger.experiment.config['timestring'] = self.p.timestring
         wandb_logger.experiment.config['learning_rate'] = self.p.learning_rate  # todo: cosine annealing
@@ -31,17 +31,56 @@ class Deploy:
         wandb_logger.experiment.config['epochs'] = self.p.epochs
         wandb_logger.experiment.config['batch_size'] = self.p.batch_size
         Dat = Dataspring(self.p, self.csv)
-        # savepath = os.path.join(self.p.model_dir, 'tennis_mlp_' + self.p.timestring + '.h5')
-        dataset_train, dataset_val, dataset_test = Dat.build_dataset_with_labels()
-        _model = Model(self.p.learning_rate)
-        model= _model.load_from_checkpoint(self.ckpt_path)
-        test_loader = DataLoader(dataset_test, batch_size=self.p.batch_size)
-        model.eval()
-        trainer = pl.Trainer(accelerator='gpu', devices=1,
-                             logger=wandb_logger,
-                             max_epochs=self.p.epochs,
-                             default_root_dir=self.p.model_dir)
-        trainer.test(model, test_loader)
+
+        # Check if this is a deploy CSV (no labels) or test set
+        if 'deploy' in self.csv:
+            Dat.load_metadata(os.path.join(self.p.resources_dir, 'meta.csv'))
+            feats_deploy, lbls, player_names = Dat.prepare_dataset_deploy()
+            _model = Model(self.p.learning_rate)
+            model = _model.load_from_checkpoint(self.ckpt_path)
+            model.eval()
+
+            # Generate predictions with probabilities
+            with torch.no_grad():
+                feats_tensor = torch.Tensor(feats_deploy)
+                log_probs = model(feats_tensor)
+                probs = torch.exp(log_probs).numpy()
+                preds = torch.argmax(log_probs, dim=1).numpy()
+
+            results = []
+            for i in range(len(preds)):
+                result = {
+                    'player1_name': player_names.player1_name.iloc[i],
+                    'player2_name': player_names.player2_name.iloc[i],
+                    'predicted_winner': int(preds[i]) + 1,
+                    'player1_win_prob': float(probs[i][0]),
+                    'player2_win_prob': float(probs[i][1])
+                }
+                results.append(result)
+                print(f'{result["player1_name"]} vs {result["player2_name"]} - '
+                      f'Winner: Player {result["predicted_winner"]} - '
+                      f'Probabilities: P1={result["player1_win_prob"]:.3f}, P2={result["player2_win_prob"]:.3f}')
+
+            # Save predictions
+            import pandas as pd
+            results_df = pd.DataFrame(results)
+            output_path = os.path.join(self.p.data_dir, f'nn_predictions_{self.p.timestring}.csv')
+            results_df.to_csv(output_path, index=False)
+            print(f'\nSaved neural network predictions to {output_path}')
+
+            return results_df
+        else:
+            # Original test set evaluation
+            dataset_train, dataset_val, dataset_test = Dat.build_dataset_with_labels()
+            _model = Model(self.p.learning_rate)
+            model= _model.load_from_checkpoint(self.ckpt_path)
+            test_loader = DataLoader(dataset_test, batch_size=self.p.batch_size)
+            model.eval()
+            trainer = pl.Trainer(accelerator='gpu', devices=1,
+                                 logger=wandb_logger,
+                                 max_epochs=self.p.epochs,
+                                 default_root_dir=self.p.model_dir)
+            trainer.test(model, test_loader)
 
 if __name__ == '__main__':
     result = pyfiglet.figlet_format("Tennis Deploy", font="slant")
