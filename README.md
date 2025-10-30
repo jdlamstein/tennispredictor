@@ -29,30 +29,30 @@ houses' betting odds.
 backtesting framework, and performance monitoring. See [betting/README.md](betting/README.md) for details. 
 
 
-## Setup 
+## Setup
 Pull the [repo](https://github.com/JeffSackmann/tennis_atp) in a location of your choosing. Record the location.
-
 
 ## How to Run
 Set the pythonpath to the project directory:
+
     export PYTHONPATH=/path/to/tennispredictor/
 
-Activate the virtual environment.
-Create virtual environment with using pip or conda. 
+Activate the virtual environment. Create a virtual environment using pip or conda.
 For example with pip:
+
     python -m pip install -r requirements.txt
 
 
 ## Clean Data
 The clean data script consolidates CSVs, removes null values, converts strings to numeric and calculates an ELO score, which
-from the literature is more predictive than tennis ranking. 
+from the literature is more predictive than tennis ranking.
 
-    python preprocessing/clean_data.py --tennisdir "/path/to/data/tennis_atp" --datadir "/path/to/your/data/directory"
+    python preprocessing/clean_data.py --tennisdir "/path/to/data/tennis_atp" --savedir "/path/to/your/data/directory"
 
 ## Train Model
-To train the MLP
+To train the MLP:
 
-    python main/train.py --csv "/path/to/your/data/directory/atp_database.csv"
+    python main/train.py --csv "/path/to/your/data/directory/atp_database.csv" --rootdir "/path/to/your/data/directory"
 
 ## Classifiers
 Traditional classifiers include Nearest Neighbors, Linear SVM, Gaussian Process, Decision Tree,
@@ -60,8 +60,7 @@ Random Forest, Neural Net, AdaBoost, Naive Bayes, and QDA.
 
 To train traditional classifiers on the data, run
 
-    python main.classifier.py --csv "/path/to/your/data/directory/atp_database.csv"  
-    --rootdir "/path/to/your/data/directory"
+    python main/classifier.py --csv "/path/to/your/data/directory/atp_database.csv" --rootdir "/path/to/your/data/directory"
 
 where `rootdir` is your results directory. 
 
@@ -69,10 +68,7 @@ The classifiers are saved based on `timestring`.
 
 To predict on your trained classifiers, run
 
-    python main.classifier.py --csv "/path/to/your/data/directory/atp_database.csv"  
-        --rootdir "/path/to/your/data/directory" 
-        --timestring "timestring of your trained classifier"
-        --classifier_name "Name of your classifier"
+    python main/classifier.py --csv "/path/to/your/data/directory/atp_database.csv" --rootdir "/path/to/your/data/directory" --timestring "timestring_of_your_trained_classifier" --classifier_name "AdaBoost"
 
 ## Deploy on New Data
 To predict on new matches, run
@@ -84,11 +80,9 @@ atp_database.csv.
 
 To deploy on a classifier, replace csv with the output of generate_deploy.py.
 
-To deploy on the neural network, run
+To deploy on the neural network, run:
 
-    python main/deploy.py --csv /path/to/csv
-    --ckpt_path /path/to/model
-    --rootdir /path/to/your/analysis/dir
+    python main/deploy.py --csv /path/to/deploy.csv --ckpt_path /path/to/model.ckpt --rootdir /path/to/your/analysis/dir
 
 ## Betting Strategy Module (NEW)
 
