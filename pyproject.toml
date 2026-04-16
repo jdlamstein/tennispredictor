@@ -1,0 +1,90 @@
+[tool.poetry]
+name = "tennispredictor"
+version = "0.1.0"
+description = "ATP tennis match prediction for profitable sports betting"
+authors = ["Josh Lamstein <jdlamstein@gmail.com>"]
+readme = "README.md"
+packages = [
+    { include = "src" },
+    { include = "preprocessing" },
+    { include = "models" },
+    { include = "main" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.11"   # Poetry env runs 3.13; torch ≥ 2.5 required for 3.13 wheels
+
+# Data
+numpy = "^1.26"
+pandas = "^2.1"
+scipy = "^1.11"
+
+# ML
+scikit-learn = "^1.3"
+xgboost = "^2.0"
+lightgbm = "^4.1"
+
+# Deep learning — torch ≥ 2.6 is the first release with Python 3.13 wheels
+# MPS acceleration works out of the box on Apple Silicon (M1/M2/M3)
+# For CUDA, swap torch source: https://pytorch.org/get-started
+torch = "^2.6"
+torchaudio = "^2.6"
+torchvision = "^0.21"
+pytorch-lightning = "^2.4"
+torchmetrics = "^1.4"
+
+# Experiment tracking
+wandb = "^0.16"
+mlflow = "^2.9"
+
+# Config
+pyyaml = "^6.0"
+python-dotenv = "^1.0"
+
+# Betting / live feed
+betfairlightweight = "^2.19"
+apscheduler = "^3.10"
+
+# Utilities
+joblib = "^1.3"
+tqdm = "^4.66"
+pyfiglet = "^1.0"
+requests = "^2.31"
+lxml = "^5.0"   # 5.x has Python 3.13 wheels; 4.x requires compilation
+openpyxl = "^3.1"  # required for reading tennis-data.co.uk .xlsx files
+matplotlib = "^3.8"
+xlrd = "^2.0.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4"
+pytest-cov = "^4.1"
+black = "^23.12"
+ruff = "^0.1"
+mypy = "^1.7"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true

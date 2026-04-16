@@ -1,0 +1,26 @@
+# Experiment configuration
+# Switch model type: mlp | naive_bayes | adaboost | xgboost | ensemble
+model:
+  type: mlp
+  checkpoint: latest       # "latest" or path to specific .ckpt file
+  kelly_fraction: 0.25     # Fractional Kelly multiplier (0.25 = quarter-Kelly)
+  min_ev_threshold: 0.02   # Minimum expected value to place a simulated bet
+
+training:
+  batch_size: 128
+  epochs: 100
+  learning_rate: 1.0e-6
+  optimizer: adam
+  early_stopping_patience: 4
+
+data:
+  # Paths resolved relative to rootdir (set via ATP_ROOTDIR env var)
+  atp_database: tennis_data/atp_database.csv
+  odds_dir: tennis_data/odds          # tennis-data.co.uk CSVs go here
+  meta: tennis_resources/meta.csv
+
+evaluation:
+  holdout_start: "2023-01-01"        # ISO date for backtesting holdout window
+  holdout_end:   "2025-12-31"
+  kelly_fraction: 0.25
+  min_ev: 0.02
