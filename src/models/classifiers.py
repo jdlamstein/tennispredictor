@@ -65,7 +65,10 @@ class SklearnPredictor(BasePredictor):
         Returns
         -------
         np.ndarray, shape (n_samples, 2)
-            Column 0 → P(player 2 wins), Column 1 → P(player 1 wins).
+            Column 0 → P(player 1 wins) = P(class 0) = P(game_winner == 1).
+            Column 1 → P(player 2 wins) = P(class 1) = P(game_winner == 2).
+            Follows sklearn convention: column k = P(class k). With label
+            encoding ``y = game_winner - 1``, class 0 = player 1 wins.
         """
         if not hasattr(self._clf, "predict_proba"):
             raise ValueError(

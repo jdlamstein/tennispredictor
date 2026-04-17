@@ -12,6 +12,7 @@ Quick reference for all plans. Read individual plan files for full details.
 
 | Date | Title | Summary | Commit | Jira | File |
 |------|-------|---------|--------|------|------|
+| 2026-04-17 | Prevent Pipeline Alignment Bugs | 14 regression tests, docstring fixes, runtime assertions, and design principles doc to prevent the 5 bugs that caused a 93%-accurate model to produce 49% win rate | c9969d3 | N/A | [link](2026-04/2026-04-17-prevent-pipeline-alignment-bugs.md) |
 
 ## Abandoned Plans
 

@@ -20,6 +20,8 @@ Usage
 Environment variables
 ---------------------
     ATP_ROOTDIR   Parent dir (default: ~/Data/tennis)
+    ATP_DB        Full path to database CSV (default: ATP_ROOTDIR/tennis_data/atp_database.csv)
+                  Use atp_database_enriched.csv to include surface ELO + Glicko-2 features.
     MODEL_TYPE    naive_bayes | adaboost | xgboost (default: naive_bayes)
     HOLDOUT_YEAR  First holdout year (default: 2022)
     KELLY         Fractional Kelly multiplier (default: 0.25)
@@ -42,7 +44,8 @@ logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 # Config
 # ---------------------------------------------------------------------------
 ATP_ROOTDIR = os.path.expanduser(os.environ.get("ATP_ROOTDIR", "~/Data/tennis"))
-ATP_DB = os.path.join(ATP_ROOTDIR, "tennis_data", "atp_database.csv")
+_default_db = os.path.join(ATP_ROOTDIR, "tennis_data", "atp_database.csv")
+ATP_DB = os.path.expanduser(os.environ.get("ATP_DB", _default_db))
 ODDS_DIR = os.path.join(ATP_ROOTDIR, "tennis_data", "odds")
 
 MODEL_TYPE = os.environ.get("MODEL_TYPE", "naive_bayes")
@@ -62,13 +65,42 @@ _DROP_EXACT = ["tourney_id", "month", "day", "minutes", "tourney_date",
                "Unnamed: 0", "Unnamed: 0.1", "yday"]
 
 
-def _prepare_features(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
-    """Drop non-feature columns and return (X, y)."""
+def _prepare_features(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, list[str]]:
+    """Drop non-feature columns and return (X, y, feature_cols).
+
+    ROW-ORDERING CONTRACT
+    ---------------------
+    Rows are sorted by ``tourney_date`` internally before building X.
+    Row i of the returned X corresponds to the i-th row of
+    ``df.sort_values("tourney_date").reset_index(drop=True)``.
+
+    Callers that pair the returned array with other per-match data (e.g.,
+    player names for odds matching) MUST use the same sorted DataFrame, not
+    the original unsorted input. Failure causes a systematic row-order
+    mismatch where every prediction is assigned to the wrong match.
+
+    Correct call pattern in main()::
+
+        test_sorted = test_raw.sort_values("tourney_date").reset_index(drop=True)
+        X_test, y_test, _ = _prepare_features(test_raw)   # sorts internally
+        probs = model.predict_proba(X_test)
+        matched = match_odds(test_sorted, odds_df, probs)  # must use test_sorted
+
+    LABEL ENCODING
+    --------------
+    ``y = game_winner - 1``: player1 wins → 0, player2 wins → 1.
+    ``game_winner`` must not appear in any feature-drop list (it is extracted
+    first and then dropped explicitly so the two operations cannot conflict).
+    """
     df = df.copy().sort_values("tourney_date").reset_index(drop=True)
     df = df.fillna(-10)
 
-    # Extract labels before dropping (game_winner also appears in _DROP_EXACT)
-    y = df["game_winner"].values - 1   # 0 or 1
+    # Extract labels BEFORE dropping — game_winner also appears in _DROP_EXACT.
+    assert "game_winner" in df.columns, "Input DataFrame must contain 'game_winner'"
+    assert set(np.unique(df["game_winner"].dropna().astype(int))).issubset({1, 2}), (
+        f"game_winner must contain only 1 and 2, got: {df['game_winner'].unique()}"
+    )
+    y = df["game_winner"].values - 1   # 0 = player1 wins, 1 = player2 wins
 
     # Drop by exact name
     drop_cols = [c for c in _DROP_EXACT if c in df.columns]
@@ -78,20 +110,64 @@ def _prepare_features(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     for pat in _DROP_PATTERNS:
         df = df.drop(columns=[c for c in df.columns if pat in c], errors="ignore")
 
-    # game_winner already extracted above; remove if somehow still present
+    # game_winner was already extracted; ensure it's not in the feature matrix
     df = df.drop(columns=["game_winner"], errors="ignore")
 
-    return df.values.astype(float), y, df.columns.tolist()
+    feat_cols = df.columns.tolist()
+    leakage = {"game_winner", "player1_name", "player2_name", "tourney_date"} & set(feat_cols)
+    assert not leakage, f"Leakage columns found in feature matrix: {leakage}"
+
+    X = df.values.astype(float)
+    assert len(X) == len(y), f"Feature matrix ({len(X)}) and labels ({len(y)}) have different lengths"
+    return X, y, feat_cols
 
 
 def match_odds(test_df: pd.DataFrame, odds_df: pd.DataFrame, probs: np.ndarray) -> pd.DataFrame:
     """Join predictions with odds on (year, p1_surname, p2_surname).
 
-    tennis-data.co.uk names: "Djokovic N." → surname = first token.
-    atp_database names:      "Novak Djokovic" → surname = last token.
+    ALIGNMENT CONTRACT
+    ------------------
+    ``test_df`` must be sorted by ``tourney_date`` with a reset integer index so
+    that ``test_df.iloc[i]`` corresponds to ``probs[i]``. Pass the same frozen
+    (sorted + reset_index) DataFrame that was used to compute X_test — never the
+    original unsorted DataFrame. Violating this silently assigns every probability
+    to the wrong match, producing random-walk predictions (~49% win rate).
 
-    Tries both player orderings (winner/loser may be swapped vs. odds file).
+    PROBABILITY CONVENTION
+    ----------------------
+    ``probs[:, 0]`` = P(player1 wins) following sklearn's convention (column k =
+    P(class k), class 0 = game_winner 1 = player1 wins). Do NOT use ``probs[:, 1]``.
+
+    CASE A vs CASE B
+    ----------------
+    Case A: ATP player1 surname = odds Winner surname. ``actual_winner = 1``.
+        Filtered to ``game_winner == 1`` to discard name-collision false matches.
+    Case B: ATP player1 surname = odds Loser surname (names swapped in odds file).
+        ``p1_odds = PSL`` (loser's odds), ``p2_odds = PSW`` (winner's odds).
+        ``actual_winner = 2``. Filtered to ``game_winner == 2``.
+        p1_win_prob is NOT flipped — it stays as P(player1 wins). The backtester's
+        EV formula compares p1_win_prob against p1_odds directly, which is correct.
+
+    Name formats
+    ------------
+    tennis-data.co.uk: "Djokovic N." → surname = first token (str.split().str[0]).
+    atp_database:      "Novak Djokovic" → surname = last token (str.split().str[-1]).
     """
+    # --- Alignment guards ---
+    assert probs.ndim == 2 and probs.shape[1] == 2, (
+        f"probs must have shape (n, 2), got {probs.shape}"
+    )
+    assert probs.shape[0] == len(test_df), (
+        f"Row count mismatch: probs has {probs.shape[0]} rows, test_df has {len(test_df)}. "
+        "Pass the sorted test DataFrame that was used to build X_test."
+    )
+    if "tourney_date" in test_df.columns:
+        dates = test_df["tourney_date"].values
+        assert (dates[:-1] <= dates[1:]).all(), (
+            "test_df must be sorted by tourney_date (ascending). "
+            "Pass test_sorted = test_raw.sort_values('tourney_date').reset_index(drop=True)."
+        )
+
     test = test_df.copy().reset_index(drop=True)
     # probs[:, 0] = P(class 0) = P(game_winner=1) = P(player1 wins)
     test["p1_win_prob"] = np.clip(probs[:, 0], 1e-6, 1.0 - 1e-6)
@@ -106,18 +182,18 @@ def match_odds(test_df: pd.DataFrame, odds_df: pd.DataFrame, probs: np.ndarray) 
 
     slim = odds[["match_year", "w_sn", "l_sn", "p1_odds", "p2_odds"]]
 
-    # Case A: our p1 = odds winner
+    # Case A: our p1 = odds winner.
+    # Valid only when ATP game_winner == 1 (confirms p1 actually won, not a name collision).
     ma = test.merge(
         slim.rename(columns={"w_sn": "p1_sn", "l_sn": "p2_sn"}),
         on=["match_year", "p1_sn", "p2_sn"], how="inner",
     )
     ma["actual_winner"] = 1
+    ma = ma[ma["game_winner"] == 1]   # drop name-collision mismatches
 
     # Case B: our p1 = odds loser (names swapped).
-    # Odds are swapped so p1_odds = PSL (loser's odds), p2_odds = PSW (winner's odds).
-    # p1_win_prob stays as-is (model's P(player1 wins), which is low since p1 is the loser).
-    # actual_winner = 2 because our p1 lost → player2 won.
-    # Backtester will correctly compute high EV for betting on p2 (the winner).
+    # p1_odds = PSL (loser's odds), p2_odds = PSW (winner's odds).
+    # actual_winner = 2; valid only when ATP game_winner == 2.
     mb = test.merge(
         slim.rename(columns={"w_sn": "p2_sn", "l_sn": "p1_sn",
                               "p1_odds": "p2_odds_x", "p2_odds": "p1_odds_x"}),
@@ -126,14 +202,31 @@ def match_odds(test_df: pd.DataFrame, odds_df: pd.DataFrame, probs: np.ndarray) 
     if not mb.empty and "p1_odds_x" in mb.columns:
         mb = mb.rename(columns={"p1_odds_x": "p1_odds", "p2_odds_x": "p2_odds"})
         mb["actual_winner"] = 2
+        mb = mb[mb["game_winner"] == 2]   # drop name-collision mismatches
 
     merged = pd.concat([ma, mb], ignore_index=True)
-    merged = merged.drop_duplicates(subset=["match_year", "p1_sn", "p2_sn"])
+    # Dedup on sorted surnames to avoid betting both orderings of the same physical match.
+    if not merged.empty:
+        merged["_key"] = merged.apply(
+            lambda r: tuple(sorted([r["p1_sn"], r["p2_sn"]])) + (int(r["match_year"]),), axis=1
+        )
+        merged = merged.drop_duplicates(subset=["_key"]).drop(columns=["_key"])
 
     # Add date column for backtester (uses match_year as proxy)
     merged["date"] = pd.to_datetime(
         merged["tourney_date"].astype(str), format="%Y%m%d", errors="coerce"
     )
+
+    match_rate = 100.0 * len(merged) / max(len(test_df), 1)
+    logging.info(
+        "match_odds: Case A=%d, Case B=%d, deduped=%d (%.1f%% of test set matched)",
+        len(ma), len(mb), len(merged), match_rate,
+    )
+    if match_rate < 5.0:
+        logging.warning(
+            "Only %.1f%% of test rows matched odds. Check name formats and year coverage.",
+            match_rate,
+        )
     return merged
 
 
@@ -162,10 +255,21 @@ def main() -> None:
     holdout_odds = odds_df[odds_df["date_int"] // 10000 >= HOLDOUT_YEAR]
     print(f"  Odds total: {len(odds_df):,}  |  Holdout odds: {len(holdout_odds):,}")
 
-    # 2. Prepare features
+    # 2. Prepare features — _prepare_features sorts by tourney_date internally,
+    # so we must use the same sorted DataFrame when passing probs to match_odds.
     print("Building feature matrices...")
+    test_sorted = test_raw.sort_values("tourney_date").reset_index(drop=True)
     X_train, y_train, feat_cols = _prepare_features(train_raw)
-    X_test,  y_test,  _          = _prepare_features(test_raw)
+    X_test,  y_test,  _          = _prepare_features(test_raw)   # sorts internally
+    # Alignment guard: test_sorted and X_test must have the same row count so
+    # probs[i] correctly corresponds to test_sorted.iloc[i] in match_odds().
+    assert len(test_sorted) == len(X_test), (
+        f"Alignment failure: test_sorted has {len(test_sorted)} rows "
+        f"but X_test has {len(X_test)}. Both must derive from the same test_raw."
+    )
+    assert set(np.unique(y_train)).issubset({0, 1}), (
+        f"Unexpected label values in y_train: {np.unique(y_train)}"
+    )
     print(f"  Features: {X_train.shape[1]}  |  Train: {len(X_train):,}  |  Test: {len(X_test):,}")
 
     # Normalize using ONLY training statistics
@@ -195,7 +299,7 @@ def main() -> None:
     # 4. Match predictions with odds
     test_probs = model.predict_proba(X_test)   # (n, 2)
     print("Matching predictions to bookmaker odds...")
-    matched = match_odds(test_raw, holdout_odds, test_probs)
+    matched = match_odds(test_sorted, holdout_odds, test_probs)
     if matched.empty:
         print("No matches found. Check name format in both datasets.")
         return

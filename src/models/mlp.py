@@ -112,7 +112,10 @@ class MLPPredictor(BasePredictor):
         Returns
         -------
         np.ndarray, shape (n_samples, 2)
-            Column 0 → P(player 2 wins), Column 1 → P(player 1 wins).
+            Column 0 → P(player 1 wins) = P(class 0) = P(game_winner == 1).
+            Column 1 → P(player 2 wins) = P(class 1) = P(game_winner == 2).
+            The underlying Lightning model uses ``F.one_hot(y, num_classes=2)``
+            where ``y = game_winner - 1``, so output neuron 0 = class 0 = player 1 wins.
         """
         if self._model is None:
             raise RuntimeError("Call fit() or load() before predict_proba().")

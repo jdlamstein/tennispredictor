@@ -50,8 +50,17 @@ class BasePredictor(ABC):
         Returns
         -------
         np.ndarray, shape (n_samples, 2)
-            Column 0 → P(player 2 wins), Column 1 → P(player 1 wins).
+            Column 0 → P(player 1 wins) = P(class 0) = P(game_winner == 1).
+            Column 1 → P(player 2 wins) = P(class 1) = P(game_winner == 2).
             Each row sums to 1.0.
+
+        Notes
+        -----
+        Follows sklearn's predict_proba convention: column k = P(class k).
+        With label encoding ``y = game_winner - 1``, class 0 = player 1 wins.
+        Callers must use ``probs[:, 0]`` for p1_win_prob. Using ``probs[:, 1]``
+        inverts all predictions — accuracy appears unchanged (argmax is symmetric)
+        but EV and Kelly sizing are completely wrong.
         """
 
     @abstractmethod

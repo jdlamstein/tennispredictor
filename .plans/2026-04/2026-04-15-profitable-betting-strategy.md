@@ -557,10 +557,11 @@ Four implementation phases, each building on the previous:
 - [x] Phase 1: Implement `src/evaluation/metrics.py` (ROI, Brier, CLV, Sharpe, drawdown)
 - [x] Phase 1: Implement `src/betting/kelly.py`
 - [x] Phase 1: Implement `src/data/odds_loader.py` (download + parse tennis-data.co.uk)
-- [ ] Phase 2: Surface-specific ELO in `src/features/elo.py`
-- [ ] Phase 2: Complete `src/features/glicko.py`
+- [x] Phase 2: Surface-specific ELO in `src/features/elo.py`
+- [x] Phase 2: Complete `src/features/glicko.py`
+- [x] Phase 2: `scripts/enrich_features.py` to build `atp_database_enriched.csv` (+14 cols, 48 features)
 - [ ] Phase 2: `src/data/odds_loader.py` for tennis-data.co.uk
-- [ ] Phase 3: `src/models/xgboost_model.py`
+- [x] Phase 3: `src/models/xgboost_model.py`
 - [ ] Phase 3: Market-informed ensemble
 - [ ] Phase 4: `src/betting/paper_trader.py` with APScheduler
 - [ ] Phase 4: `src/betting/odds_fetcher.py` (Betfair API via `betfairlightweight` + OddsPortal scraper)
