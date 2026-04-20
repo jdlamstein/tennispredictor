@@ -28,7 +28,8 @@ Environment variables
     MARKET_ALPHA    Model weight in ensemble blend (default: 0.3)
     MODEL_PATH      Path to saved XGBoost model JSON (optional — trains if absent)
     HOLDOUT_YEAR    First holdout year used to train saved model (default: 2022)
-    USE_BETFAIR     Set to 1 to use Betfair API instead of OddsPortal
+    ODDS_API_KEY    API key for the-odds-api.com (free tier, 500 credits/month)
+    USE_BETFAIR     Set to 1 to use Betfair API instead of TheOddsAPI
 """
 
 import argparse
@@ -38,7 +39,6 @@ import sys
 
 import joblib
 import numpy as np
-import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -73,40 +73,28 @@ USE_BETFAIR      = os.environ.get("USE_BETFAIR", "0").lower() in ("1", "true", "
 def _load_or_train_model(scaler_ref: list):
     """Return a fitted model + scaler. Loads joblib cache if available."""
     from src.models.xgboost_model import XGBoostPredictor
-    from scripts.backtest import _prepare_features
+    from src.features.feature_store import FeatureStore
 
     # Fast path: load from joblib cache (model + scaler bundled together)
     if MODEL_CACHE_PATH and os.path.exists(MODEL_CACHE_PATH):
         try:
             bundle = joblib.load(MODEL_CACHE_PATH)
-            scaler_ref.append(bundle["scaler"])
-            logger.info("Loaded model cache from %s", MODEL_CACHE_PATH)
-            return bundle["model"]
+            if bundle.get("holdout_year") != HOLDOUT_YEAR:
+                logger.warning(
+                    "Cache holdout_year=%s ≠ current HOLDOUT_YEAR=%d — retraining.",
+                    bundle.get("holdout_year"), HOLDOUT_YEAR,
+                )
+            else:
+                scaler_ref.append(bundle["scaler"])
+                logger.info("Loaded model cache from %s", MODEL_CACHE_PATH)
+                return bundle["model"]
         except Exception as exc:
             logger.warning("Cache load failed (%s) — retraining.", exc)
 
-    # Legacy: load XGBoost JSON (no scaler — refit scaler on training data)
-    if MODEL_PATH and os.path.exists(MODEL_PATH):
-        logger.info("Loading XGBoost model from %s", MODEL_PATH)
-        model = XGBoostPredictor.load(MODEL_PATH)
-        logger.warning(
-            "MODEL_PATH loaded but no scaler bundled — re-fitting scaler on training data."
-        )
-        raw = pd.read_csv(ATP_DB, low_memory=False)
-        raw["year_col"] = raw["tourney_date"] // 10000
-        train_raw = raw[raw["year_col"] < HOLDOUT_YEAR].copy()
-        X_train, _, _ = _prepare_features(train_raw)
-        scaler = StandardScaler().fit(X_train)
-        scaler_ref.append(scaler)
-        return model
-
-    # Train from scratch
+    # Train from scratch using FeatureStore (40 features — matches inference path)
     logger.info("Training XGBoost on %s (holdout=%d)...", ATP_DB, HOLDOUT_YEAR)
-    raw = pd.read_csv(ATP_DB, low_memory=False)
-    raw["year_col"] = raw["tourney_date"] // 10000
-    train_raw = raw[raw["year_col"] < HOLDOUT_YEAR].copy()
+    _store, X_train, y_train = FeatureStore.build_training_matrix(ATP_DB, holdout_year=HOLDOUT_YEAR)
 
-    X_train, y_train, _ = _prepare_features(train_raw)
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
     scaler_ref.append(scaler)
@@ -173,7 +161,7 @@ def _build_feature_builder(scaler):
 
 def _make_trader(model, scaler):
     from src.betting.paper_trader import PaperTrader, PaperTraderConfig
-    from src.betting.odds_fetcher import BetfairFetcher, OddsPortalFetcher
+    from src.betting.odds_fetcher import BetfairFetcher, OddsPortalFetcher, TheOddsAPIFetcher
     from src.evaluation.calibration import blend_with_market
 
     cfg = PaperTraderConfig(
@@ -191,10 +179,10 @@ def _make_trader(model, scaler):
         try:
             fetcher = BetfairFetcher.from_env()
         except ValueError as exc:
-            logger.warning("Betfair not configured (%s) — falling back to OddsPortal.", exc)
-            fetcher = OddsPortalFetcher()
+            logger.warning("Betfair not configured (%s) — trying TheOddsAPI.", exc)
+            fetcher = TheOddsAPIFetcher.from_env() or OddsPortalFetcher()
     else:
-        fetcher = OddsPortalFetcher()
+        fetcher = TheOddsAPIFetcher.from_env() or OddsPortalFetcher()
 
     return PaperTrader(
         cfg,

@@ -366,6 +366,83 @@ class FeatureStore:
     # Feature vector construction
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _feats_from_states(
+        ps1: "PlayerState",
+        ps2: "PlayerState",
+        match_date: date,
+        surface: int = 0,
+        tourney_level: float = 0.0,
+        round_num: float = 1.0,
+        best_of: float = 3.0,
+        draw_size: float = 32.0,
+        p1_seed: float = -10.0,
+        p2_seed: float = -10.0,
+    ) -> list[float]:
+        """Build 40-element feature list from two PlayerState objects.
+
+        Used by both make_features (inference) and build_training_matrix (training).
+        All features reflect PRE-MATCH player state.
+        """
+        surf_name = _SURFACE_MAP.get(surface, "hard")
+        year = match_date.year
+        yday = match_date.timetuple().tm_yday
+        sine_day = math.sin(2 * math.pi * yday / 365.0)
+        cosine_day = math.cos(2 * math.pi * yday / 365.0)
+
+        def _age(ps: "PlayerState") -> float:
+            if ps.dob:
+                return (match_date - ps.dob).days / 365.25
+            return -10.0
+
+        def _weeks_inactive(ps: "PlayerState") -> float:
+            if ps.last_match_date is None:
+                return -10.0
+            return max(0.0, (match_date - ps.last_match_date).days / 7.0)
+
+        return [
+            float(surface),
+            float(draw_size),
+            float(tourney_level),
+            -10.0,                            # match_num (unavailable pre-match)
+            float(best_of),
+            float(round_num),
+            float(p1_seed),
+            -10.0,                            # player1_entry
+            ps1.hand,
+            ps1.ht,
+            ps1.ioc,
+            _age(ps1),
+            float(p2_seed),
+            -10.0,                            # player2_entry
+            ps2.hand,
+            ps2.ht,
+            ps2.ioc,
+            _age(ps2),
+            ps1.surface_elo(surf_name),
+            ps2.surface_elo(surf_name),
+            ps1.glicko_r(),
+            ps1.glicko_rd(),
+            ps1.glicko_sigma(),
+            ps2.glicko_r(),
+            ps2.glicko_rd(),
+            ps2.glicko_sigma(),
+            float(year),
+            sine_day,
+            cosine_day,
+            float(ps1.winning_streak),
+            float(ps2.winning_streak),
+            float(ps1.losing_streak),
+            float(ps2.losing_streak),
+            _weeks_inactive(ps1),
+            _weeks_inactive(ps2),
+            float(ps1.recent_matches),
+            float(ps2.recent_matches),
+            float(ps1.h2h.get(ps2.player_id, 0)),
+            float(ps2.h2h.get(ps1.player_id, 0)),
+            float(year),                      # year_col
+        ]
+
     def make_features(
         self,
         p1_name: str,
@@ -381,9 +458,6 @@ class FeatureStore:
     ) -> Optional[np.ndarray]:
         """Return a (1, n_features) array for model inference.
 
-        Column order matches ``scripts/backtest._prepare_features`` output
-        for the enriched database.
-
         Returns None if either player is not found in the store.
         """
         ps1 = self._resolve(p1_name)
@@ -396,75 +470,182 @@ class FeatureStore:
             return None
 
         today = current_date or date.today()
-        surf_name = _SURFACE_MAP.get(surface, "hard")
-
-        def _age(ps: PlayerState) -> float:
-            if ps.dob:
-                return (today - ps.dob).days / 365.25
-            return -10.0
-
-        def _weeks_inactive(ps: PlayerState) -> float:
-            if ps.last_match_date is None:
-                return -10.0
-            return max(0.0, (today - ps.last_match_date).days / 7.0)
-
-        def _h2h(ps_a: PlayerState, ps_b: PlayerState) -> float:
-            return float(ps_a.h2h.get(ps_b.player_id, 0))
-
-        year = today.year
-        yday = today.timetuple().tm_yday
-        sine_day = math.sin(2 * math.pi * yday / 365.0)
-        cosine_day = math.cos(2 * math.pi * yday / 365.0)
-
-        # Feature order matches _prepare_features output for enriched DB.
-        # Unknown / unavailable fields filled with -10 (same sentinel as backtest).
-        feats = [
-            float(surface),                  # surface
-            float(draw_size),                 # draw_size
-            float(tourney_level),             # tourney_level
-            -10.0,                            # match_num (unavailable pre-match)
-            float(best_of),                   # best_of
-            float(round_num),                 # round
-            float(p1_seed),                   # player1_seed
-            -10.0,                            # player1_entry
-            ps1.hand,                         # player1_hand
-            ps1.ht,                           # player1_ht
-            ps1.ioc,                          # player1_ioc
-            _age(ps1),                        # player1_age
-            float(p2_seed),                   # player2_seed
-            -10.0,                            # player2_entry
-            ps2.hand,                         # player2_hand
-            ps2.ht,                           # player2_ht
-            ps2.ioc,                          # player2_ioc
-            _age(ps2),                        # player2_age
-            # Surface ELOs (pre-match for NEXT match = post-match from last match)
-            ps1.surface_elo(surf_name),       # player1_elo_{surf}
-            ps2.surface_elo(surf_name),       # player2_elo_{surf}
-            # Glicko-2
-            ps1.glicko_r(),                   # player1_glicko
-            ps1.glicko_rd(),                  # player1_rd
-            ps1.glicko_sigma(),               # player1_sigma
-            ps2.glicko_r(),                   # player2_glicko
-            ps2.glicko_rd(),                  # player2_rd
-            ps2.glicko_sigma(),               # player2_sigma
-            float(year),                      # year
-            sine_day,                         # sine_day
-            cosine_day,                       # cosine_day
-            # Form
-            float(ps1.winning_streak),        # player1_winning_streak
-            float(ps2.winning_streak),        # player2_winning_streak
-            float(ps1.losing_streak),         # player1_losing_streak
-            float(ps2.losing_streak),         # player2_losing_streak
-            _weeks_inactive(ps1),             # player1_weeks_inactive
-            _weeks_inactive(ps2),             # player2_weeks_inactive
-            float(ps1.recent_matches),        # player1_last_two_weeks
-            float(ps2.recent_matches),        # player2_last_two_weeks
-            # H2H
-            _h2h(ps1, ps2),                   # player1_v_player2_wins
-            _h2h(ps2, ps1),                   # player2_v_player1_wins
-            float(year),                      # year_col
-        ]
+        feats = self._feats_from_states(
+            ps1, ps2, today, surface, tourney_level, round_num, best_of, draw_size, p1_seed, p2_seed,
+        )
         return np.array(feats, dtype=float).reshape(1, -1)
+
+    @classmethod
+    def build_training_matrix(
+        cls,
+        db_path: str,
+        holdout_year: Optional[int] = None,
+    ) -> "tuple[FeatureStore, np.ndarray, np.ndarray]":
+        """Build FeatureStore AND capture a training feature matrix in one pass.
+
+        Features are captured from PRE-MATCH player state (no lookahead).
+        This ensures training and inference use identical 40-dim feature vectors.
+
+        Returns
+        -------
+        (store, X, y)
+            store : FeatureStore built on data before holdout_year
+            X     : float64 array of shape (n_matches, 40)
+            y     : int array of shape (n_matches,), 0=p1 wins 1=p2 wins
+        """
+        logger.info("Building FeatureStore + training matrix from %s …", db_path)
+        df = pd.read_csv(db_path, low_memory=False)
+        df = df.sort_values("tourney_date").reset_index(drop=True)
+
+        if holdout_year is not None:
+            df = df[df["tourney_date"] // 10000 < holdout_year].copy().reset_index(drop=True)
+
+        players: dict[int, "PlayerState"] = {}
+        surname_to_id: dict[str, list[int]] = {}
+        g2_period_buf: dict[int, list[tuple[float, float, float]]] = {}
+        current_period = -1
+
+        dates = pd.to_datetime(df["tourney_date"].astype(str), format="%Y%m%d", errors="coerce")
+        period_start = dates.min()
+        period_idx = ((dates - period_start).dt.days // _PERIOD_DAYS).fillna(-1).astype(int).values
+
+        def _flush_glicko() -> None:
+            for pid, results in g2_period_buf.items():
+                if pid not in players:
+                    continue
+                ps = players[pid]
+                mu, phi, sigma = ps.g2_mu, ps.g2_phi, ps.g2_sigma
+                if not results:
+                    phi_new = min(math.sqrt(phi ** 2 + sigma ** 2), _INIT_RD / _SCALE)
+                    players[pid].g2_phi = phi_new
+                    continue
+                v = 0.0
+                for mu_j, phi_j, _ in results:
+                    g_j = _g2(phi_j)
+                    e_j = _E2(mu, mu_j, phi_j)
+                    v += g_j ** 2 * e_j * (1.0 - e_j)
+                v = 1.0 / v if v > 0 else float("inf")
+                delta_sum = sum(
+                    _g2(phi_j) * (s_j - _E2(mu, mu_j, phi_j))
+                    for mu_j, phi_j, s_j in results
+                )
+                delta = v * delta_sum
+                phi_star = math.sqrt(phi ** 2 + sigma ** 2)
+                phi_new = 1.0 / math.sqrt(1.0 / phi_star ** 2 + 1.0 / v) if v < float("inf") else phi_star
+                mu_new = mu + phi_new ** 2 * delta_sum
+                players[pid].g2_mu = mu_new
+                players[pid].g2_phi = phi_new
+            g2_period_buf.clear()
+
+        def _get_or_create(pid: int, name: str = "") -> "PlayerState":
+            if pid not in players:
+                players[pid] = PlayerState(player_id=pid, name=name)
+                sn = name.split()[-1].lower() if name else ""
+                if sn:
+                    surname_to_id.setdefault(sn, [])
+                    if pid not in surname_to_id[sn]:
+                        surname_to_id[sn].append(pid)
+            return players[pid]
+
+        rows_X: list[list[float]] = []
+        rows_y: list[int] = []
+        last_date = date.min
+
+        for i, row in df.iterrows():
+            p = int(period_idx[i])
+            if p != current_period:
+                if current_period >= 0:
+                    _flush_glicko()
+                current_period = p
+
+            id1 = int(row["player1_id"])
+            id2 = int(row["player2_id"])
+            name1 = str(row.get("player1_name", ""))
+            name2 = str(row.get("player2_name", ""))
+            winner = int(row["game_winner"])
+            surface_code = int(row["surface"]) if pd.notna(row.get("surface")) else -1
+            surf = _SURFACE_MAP.get(surface_code)
+
+            ps1 = _get_or_create(id1, name1)
+            ps2 = _get_or_create(id2, name2)
+
+            if name1:
+                ps1.name = name1
+            if name2:
+                ps2.name = name2
+
+            for attr, col in [("hand", "player1_hand"), ("ht", "player1_ht"), ("ioc", "player1_ioc")]:
+                val = row.get(col)
+                if pd.notna(val):
+                    setattr(ps1, attr, float(val))
+            for attr, col in [("hand", "player2_hand"), ("ht", "player2_ht"), ("ioc", "player2_ioc")]:
+                val = row.get(col)
+                if pd.notna(val):
+                    setattr(ps2, attr, float(val))
+
+            try:
+                tdate_str = str(int(row["tourney_date"]))
+                match_date = date(int(tdate_str[:4]), int(tdate_str[4:6]), int(tdate_str[6:8]))
+            except Exception:
+                match_date = last_date
+            last_date = max(last_date, match_date)
+
+            # Capture PRE-MATCH features before any state update
+            draw_size = float(row.get("draw_size", 32)) if pd.notna(row.get("draw_size")) else 32.0
+            tourney_level = float(row.get("tourney_level", 0)) if pd.notna(row.get("tourney_level")) else 0.0
+            round_num = float(row.get("round", 1)) if pd.notna(row.get("round")) else 1.0
+            best_of = float(row.get("best_of", 3)) if pd.notna(row.get("best_of")) else 3.0
+            p1_seed = float(row.get("player1_seed", -10)) if pd.notna(row.get("player1_seed")) else -10.0
+            p2_seed = float(row.get("player2_seed", -10)) if pd.notna(row.get("player2_seed")) else -10.0
+            feats = cls._feats_from_states(
+                ps1, ps2, match_date, surface_code, tourney_level, round_num, best_of, draw_size, p1_seed, p2_seed,
+            )
+            rows_X.append(feats)
+            rows_y.append(winner - 1)  # 0=p1 wins, 1=p2 wins
+
+            # Now update state (post-match)
+            if surf:
+                r1 = ps1.surface_elo(surf)
+                r2 = ps2.surface_elo(surf)
+                g1 = ps1.elo_games.get(surf, 0)
+                g2 = ps2.elo_games.get(surf, 0)
+                setattr(ps1, f"elo_{surf}", _update_elo(r1, r2, winner == 1, g1))
+                setattr(ps2, f"elo_{surf}", _update_elo(r2, r1, winner == 2, g2))
+                ps1.elo_games[surf] = g1 + 1
+                ps2.elo_games[surf] = g2 + 1
+
+            mu1, phi1, _ = ps1.g2_mu, ps1.g2_phi, ps1.g2_sigma
+            mu2, phi2, _ = ps2.g2_mu, ps2.g2_phi, ps2.g2_sigma
+            g2_period_buf.setdefault(id1, []).append((mu2, phi2, 1.0 if winner == 1 else 0.0))
+            g2_period_buf.setdefault(id2, []).append((mu1, phi1, 1.0 if winner == 2 else 0.0))
+
+            for ps, won in [(ps1, winner == 1), (ps2, winner == 2)]:
+                if won:
+                    ps.winning_streak += 1
+                    ps.losing_streak = 0
+                else:
+                    ps.losing_streak += 1
+                    ps.winning_streak = 0
+                two_weeks_ago = match_date - timedelta(days=14)
+                if ps.last_match_date and ps.last_match_date >= two_weeks_ago:
+                    ps.recent_matches += 1
+                else:
+                    ps.recent_matches = 1
+                ps.last_match_date = match_date
+
+            ps1.h2h[id2] = ps1.h2h.get(id2, 0) + (1 if winner == 1 else 0)
+            ps2.h2h[id1] = ps2.h2h.get(id1, 0) + (1 if winner == 2 else 0)
+
+        _flush_glicko()
+
+        store = cls(players, surname_to_id, last_date)
+        X = np.array(rows_X, dtype=float)
+        y = np.array(rows_y, dtype=int)
+        logger.info(
+            "FeatureStore + training matrix built: %d players, %d rows, %d features",
+            len(players), len(rows_X), X.shape[1] if len(rows_X) else 0,
+        )
+        return store, X, y
 
     # ------------------------------------------------------------------
     # Inspection helpers

@@ -45,6 +45,11 @@ _ODDSPORTAL_ATP = "/tennis/atp/"
 _REQUEST_TIMEOUT = 10  # seconds
 _SCRAPE_DELAY = 2.0    # seconds between OddsPortal requests (rate limiting)
 
+_THE_ODDS_API_BASE = "https://api.the-odds-api.com/v4"
+_THE_ODDS_API_SPORT = "tennis_atp"
+# Preferred bookmakers in priority order; first found wins
+_PREFERRED_BOOKS = ["pinnacle", "bet365", "unibet", "betfair_ex_eu", "betfair"]
+
 
 @dataclass(frozen=True)
 class MatchOdds:
@@ -260,6 +265,156 @@ class BetfairFetcher:
             except Exception:
                 pass
             self._client = None
+
+
+class TheOddsAPIFetcher:
+    """Fetches upcoming ATP match odds from the-odds-api.com.
+
+    Free tier: 500 credits/month, no credit card required.
+    Sign up at https://the-odds-api.com to get an API key.
+
+    Parameters
+    ----------
+    api_key : str
+        API key from the-odds-api.com.
+    session : requests.Session | None
+        Optional pre-configured session (testing / proxy injection).
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        session: Optional[requests.Session] = None,
+    ) -> None:
+        self._api_key = api_key
+        self._session = session or requests.Session()
+        self._session.headers.update({"Accept": "application/json"})
+
+    @classmethod
+    def from_env(cls) -> Optional["TheOddsAPIFetcher"]:
+        """Construct from ODDS_API_KEY env var. Returns None if key not set."""
+        key = os.environ.get("ODDS_API_KEY", "")
+        if not key:
+            logger.warning("ODDS_API_KEY not set — TheOddsAPIFetcher disabled.")
+            return None
+        return cls(api_key=key)
+
+    def _get_active_atp_keys(self) -> list[str]:
+        """Return all active sport keys that are ATP tennis tournaments.
+
+        The /sports/ endpoint is free (no credit cost).
+        """
+        url = f"{_THE_ODDS_API_BASE}/sports/"
+        try:
+            resp = self._session.get(
+                url,
+                params={"apiKey": self._api_key},
+                timeout=_REQUEST_TIMEOUT,
+            )
+            resp.raise_for_status()
+            sports = resp.json()
+        except Exception as exc:
+            logger.warning("TheOddsAPI sports list failed: %s", exc)
+            return []
+
+        return [
+            s["key"]
+            for s in sports
+            if s.get("active") and s.get("key", "").startswith("tennis_atp")
+        ]
+
+    def fetch_upcoming_atp(self) -> list[MatchOdds]:
+        """Fetch upcoming ATP match odds from the-odds-api.com.
+
+        Discovers active ATP tournament sport keys first (free call), then
+        fetches odds for each (1 credit each). Returns combined list.
+
+        Returns
+        -------
+        list[MatchOdds]
+            One entry per match. Empty list on network/parse error.
+        """
+        sport_keys = self._get_active_atp_keys()
+        if not sport_keys:
+            logger.warning("TheOddsAPI: no active ATP tournaments found.")
+            return []
+
+        logger.info("TheOddsAPI: fetching odds for %d ATP tournaments: %s", len(sport_keys), sport_keys)
+
+        all_results: list[MatchOdds] = []
+        now = datetime.now(timezone.utc)
+
+        for sport_key in sport_keys:
+            url = f"{_THE_ODDS_API_BASE}/sports/{sport_key}/odds/"
+            params = {
+                "apiKey": self._api_key,
+                "regions": "eu",
+                "markets": "h2h",
+                "oddsFormat": "decimal",
+            }
+            try:
+                resp = self._session.get(url, params=params, timeout=_REQUEST_TIMEOUT)
+                resp.raise_for_status()
+                events = resp.json()
+            except requests.RequestException as exc:
+                logger.warning("TheOddsAPI fetch failed for %s: %s", sport_key, exc)
+                continue
+            except ValueError as exc:
+                logger.warning("TheOddsAPI JSON parse error for %s: %s", sport_key, exc)
+                continue
+
+            remaining = resp.headers.get("x-requests-remaining", "?")
+
+            for ev in events:
+                home = ev.get("home_team", "")
+                away = ev.get("away_team", "")
+                if not home or not away:
+                    continue
+                p1_odds, p2_odds = self._pick_odds(ev.get("bookmakers", []), home, away)
+                if p1_odds <= 1.0 or p2_odds <= 1.0:
+                    continue
+                all_results.append(MatchOdds(
+                    player1=home,
+                    player2=away,
+                    p1_odds=p1_odds,
+                    p2_odds=p2_odds,
+                    source="the-odds-api",
+                    market_id=str(ev.get("id", "")),
+                    fetched_at=now,
+                    tournament=ev.get("sport_title", ""),
+                ))
+
+            logger.info(
+                "TheOddsAPI: %s → %d matches. Credits remaining: %s",
+                sport_key, len(events), remaining,
+            )
+
+        logger.info("TheOddsAPI: total %d matches across all ATP tournaments.", len(all_results))
+        return all_results
+
+    def _pick_odds(
+        self,
+        bookmakers: list[dict],
+        home: str,
+        away: str,
+    ) -> tuple[float, float]:
+        """Return (p1_odds, p2_odds) from preferred bookmaker, or (0, 0) if none found."""
+        book_by_key = {b["key"]: b for b in bookmakers if "key" in b}
+
+        # Try preferred order first, then any available
+        ordered = [book_by_key[k] for k in _PREFERRED_BOOKS if k in book_by_key]
+        ordered += [b for b in bookmakers if b.get("key") not in _PREFERRED_BOOKS]
+
+        for book in ordered:
+            for market in book.get("markets", []):
+                if market.get("key") != "h2h":
+                    continue
+                outcomes = {o["name"]: o["price"] for o in market.get("outcomes", []) if "name" in o}
+                p1 = float(outcomes.get(home, 0.0))
+                p2 = float(outcomes.get(away, 0.0))
+                if p1 > 1.0 and p2 > 1.0:
+                    return p1, p2
+        return 0.0, 0.0
 
 
 class OddsPortalFetcher:

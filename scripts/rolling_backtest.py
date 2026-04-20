@@ -147,9 +147,11 @@ def _print_table(rows: list[dict]) -> None:
         clv   = r["clv"]
         clv_s = f"{clv:+.2f}" if np.isfinite(clv) else "  n/a"
 
+        profit = r["total_profit"]
+        profit_s = f"{profit:>+.2e}" if abs(profit) > 1e6 else f"{profit:>+8.1f}"
         print(
             f"{r['year']:>6} {n:>6} {r['win_pct']:>6.1f}% {roi:>+6.1f}% "
-            f"{sh:>7.2f} {r['max_dd']:>+6.1f}% {clv_s:>8} {r['total_profit']:>+8.1f}"
+            f"{sh:>7.2f} {-r['max_dd']:>+6.1f}% {clv_s:>8} {profit_s}"
         )
         roi_vals.append(roi)
         sharpe_vals.append(sh)
