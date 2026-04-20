@@ -57,12 +57,17 @@ class BacktestConfig:
         Which side to evaluate for betting: ``"favourite"`` (always bet the
         model's preferred side), ``"value"`` (bet only when EV > min_ev on
         either side). Default ``"value"``.
+    max_kelly : float | None
+        Hard cap on stake as a fraction of bankroll (e.g. 0.05 = 5% max).
+        Prevents exponential blow-up from overconfident Kelly sizing.
+        None = uncapped (theoretical maximum, not practical).
     """
 
     initial_bankroll: float = 1000.0
     kelly_fraction: float = 0.25
     min_ev: float = 0.02
     bet_on: str = "value"
+    max_kelly: float | None = 0.05
 
 
 @dataclass
@@ -158,6 +163,8 @@ def run(
         stake = compute_kelly_stake(
             p=p_bet, odds=odds_bet, bankroll=bankroll, fraction=config.kelly_fraction
         )
+        if config.max_kelly is not None:
+            stake = min(stake, bankroll * config.max_kelly)
         if stake == 0.0:
             continue
 

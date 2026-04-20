@@ -3,7 +3,7 @@
 | Field   | Value |
 |---------|-------|
 | Created | 2026-04-15 |
-| Updated | 2026-04-15 |
+| Updated | 2026-04-18 |
 | Status  | in-progress |
 | Commit  | 7e1b27c |
 | Jira    | N/A |
@@ -550,8 +550,8 @@ Four implementation phases, each building on the previous:
 - [x] Phase 0: Create `tests/conftest.py` with a real 200-row ATP data fixture
 - [x] Phase 0: Create `src/models/base_predictor.py` ABC
 - [x] Phase 0: Wrap MLP and classifiers to `BasePredictor`
-- [ ] Phase 0: Download tennis-data.co.uk odds CSVs (free)
-- [ ] Phase 0: Set up MLflow server
+- [x] Phase 0: Download tennis-data.co.uk odds CSVs (free) — atp_2010–2025.xlsx present, odds_loader.py + download_odds.py implemented
+- [ ] Phase 0: Set up MLflow server (DEFERRED — add when running hyperparameter grid searches)
 - [x] Phase 1: Implement temperature scaling in `src/evaluation/calibration.py`
 - [x] Phase 1: Implement `src/evaluation/backtester.py`
 - [x] Phase 1: Implement `src/evaluation/metrics.py` (ROI, Brier, CLV, Sharpe, drawdown)
@@ -560,11 +560,22 @@ Four implementation phases, each building on the previous:
 - [x] Phase 2: Surface-specific ELO in `src/features/elo.py`
 - [x] Phase 2: Complete `src/features/glicko.py`
 - [x] Phase 2: `scripts/enrich_features.py` to build `atp_database_enriched.csv` (+14 cols, 48 features)
-- [ ] Phase 2: `src/data/odds_loader.py` for tennis-data.co.uk
+- [x] Phase 2: `src/data/odds_loader.py` for tennis-data.co.uk
 - [x] Phase 3: `src/models/xgboost_model.py`
-- [ ] Phase 3: Market-informed ensemble
-- [ ] Phase 4: `src/betting/paper_trader.py` with APScheduler
-- [ ] Phase 4: `src/betting/odds_fetcher.py` (Betfair API via `betfairlightweight` + OddsPortal scraper)
+- [x] Phase 3: Market-informed ensemble (`blend_with_market`, MARKET_ALPHA env var; optimal α=0.3)
+- [x] Phase 4: `src/betting/paper_trader.py` with APScheduler
+- [x] Phase 4: `src/betting/odds_fetcher.py` (Betfair API via `betfairlightweight` + OddsPortal scraper)
+- [x] Phase 4: `src/data/results_fetcher.py` (Sackmann GitHub → daily settlement)
+- [x] Phase 4: `scripts/paper_trade.py` CLI (start | predict | settle | summary)
+- [x] Phase 4: `src/features/feature_store.py` — live ELO/Glicko-2 replay, name resolution, feature vectors
+- [x] Phase 4: Wire FeatureStore into `paper_trade.py` (model-based predictions when ATP_DB available)
+- [x] Phase 4: `tests/test_feature_store.py` — 32 tests for PlayerState, ELO updates, _resolve, make_features
+- [x] Phase 5: CLV via MaxW/MaxL closing odds in `match_odds()` — `p1_closing_odds`/`p2_closing_odds` propagated for Case A/B
+- [x] Phase 5: Model + scaler persistence — joblib cache in `paper_trade.py` (`MODEL_CACHE_PATH` env var)
+- [x] Phase 5: `scripts/rolling_backtest.py` — walk-forward 2019–2024 with per-year table + aggregate
+- [x] Phase 5: `scripts/sensitivity_analysis.py` — Kelly × MIN_EV × MARKET_ALPHA grid search
+- [x] Phase 6: `scripts/plot_backtest.py` — equity curve + drawdown (matplotlib); `--rolling` flag for bar chart
+- [x] Phase 5/6: `tests/test_backtester.py` CLV tests (5 new), `tests/test_rolling_backtest.py` (7 new), `tests/test_paper_trade_persistence.py` (7 new)
 
 ## Files Changed
 

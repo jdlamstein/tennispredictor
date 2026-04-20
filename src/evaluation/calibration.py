@@ -20,11 +20,56 @@ import logging
 from typing import Optional
 
 import numpy as np
+import pandas as pd
 from scipy.optimize import minimize_scalar
 
 from src.models.base_predictor import BasePredictor
 
 logger = logging.getLogger(__name__)
+
+
+def blend_with_market(matched: pd.DataFrame, alpha: float) -> pd.DataFrame:
+    """Blend model probability with de-vigged bookmaker implied probability.
+
+    p_final = alpha * p_model + (1 - alpha) * p_market
+
+    Parameters
+    ----------
+    matched : pd.DataFrame
+        Output of ``match_odds()`` — must contain ``p1_win_prob``, ``p1_odds``,
+        ``p2_odds``.
+    alpha : float
+        Model weight in [0, 1].
+        - 1.0 → pure model (no change to p1_win_prob)
+        - 0.0 → pure de-vigged market probability
+        - 0.3–0.7 → typical blend range
+
+    Returns
+    -------
+    pd.DataFrame
+        New DataFrame with ``p1_win_prob`` replaced by the blended probability.
+        Input is not mutated.
+
+    Raises
+    ------
+    ValueError
+        If ``alpha`` is outside [0, 1].
+    """
+    if not (0.0 <= alpha <= 1.0):
+        raise ValueError(f"alpha must be in [0, 1], got {alpha}")
+
+    df = matched.copy()
+
+    p_model = df["p1_win_prob"].values
+
+    if alpha < 1.0:
+        implied_p1 = 1.0 / df["p1_odds"].values
+        implied_p2 = 1.0 / df["p2_odds"].values
+        fair_p1 = implied_p1 / (implied_p1 + implied_p2)
+        p_model = alpha * p_model + (1.0 - alpha) * fair_p1
+
+    df["p1_win_prob"] = np.clip(p_model, 1e-6, 1.0 - 1e-6)
+    return df
 
 
 class TemperatureScaling:
@@ -52,7 +97,8 @@ class TemperatureScaling:
         ----------
         probs : np.ndarray, shape (n, 2)
             Raw (uncalibrated) softmax probabilities from the model.
-            Column 1 is P(player 1 wins).
+            Column 0 is P(player 1 wins) — sklearn convention: col k = P(class k),
+            class 0 = game_winner 1 = player1 wins. Do NOT pass col 1 as p1_win.
         outcomes : np.ndarray, shape (n,)
             Binary actual outcomes — 1 if player 1 won, 0 otherwise.
 

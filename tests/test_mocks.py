@@ -21,7 +21,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.evaluation.backtester import BacktestConfig, run, summary
-from src.evaluation.calibration import CalibratedPredictor, TemperatureScaling
+from src.evaluation.calibration import CalibratedPredictor, TemperatureScaling, blend_with_market
 from src.data.odds_loader import _parse_one
 
 
@@ -248,3 +248,81 @@ class TestOddsLoaderParsing:
         with patch("src.data.odds_loader.pd.read_excel", return_value=raw):
             df = _parse_one(fake_path)
         assert df.empty
+
+
+# ---------------------------------------------------------------------------
+# Market-informed ensemble: blend_with_market
+# ---------------------------------------------------------------------------
+
+def _matched_row(p_model: float, p1_odds: float, p2_odds: float) -> pd.DataFrame:
+    """Minimal matched DataFrame row for blend_with_market tests."""
+    return pd.DataFrame([{
+        "p1_win_prob": p_model,
+        "p1_odds": p1_odds,
+        "p2_odds": p2_odds,
+    }])
+
+
+class TestBlendWithMarket:
+    """Behavioral tests for blend_with_market."""
+
+    def test_alpha_one_leaves_prob_unchanged(self) -> None:
+        """alpha=1 (pure model) must return p1_win_prob unchanged."""
+        df = _matched_row(p_model=0.70, p1_odds=1.80, p2_odds=2.20)
+        result = blend_with_market(df, alpha=1.0)
+        assert result.iloc[0]["p1_win_prob"] == pytest.approx(0.70, abs=1e-6)
+
+    def test_alpha_zero_gives_fair_market_prob(self) -> None:
+        """alpha=0 (pure market) must return the de-vigged implied probability.
+
+        With symmetric odds (1.91 / 1.91), fair prob = 0.5.
+        """
+        df = _matched_row(p_model=0.80, p1_odds=1.91, p2_odds=1.91)
+        result = blend_with_market(df, alpha=0.0)
+        assert result.iloc[0]["p1_win_prob"] == pytest.approx(0.5, abs=1e-4)
+
+    def test_alpha_half_averages_model_and_market(self) -> None:
+        """alpha=0.5 must blend 50/50 between model and de-vigged market."""
+        # p_market: 1/1.80 = 0.5556, 1/2.20 = 0.4545, total=1.0101
+        # fair_p1 = 0.5556 / 1.0101 ≈ 0.55
+        df = _matched_row(p_model=0.75, p1_odds=1.80, p2_odds=2.20)
+        result = blend_with_market(df, alpha=0.5)
+        implied_p1 = (1.0 / 1.80)
+        implied_p2 = (1.0 / 2.20)
+        fair_p1 = implied_p1 / (implied_p1 + implied_p2)
+        expected = 0.5 * 0.75 + 0.5 * fair_p1
+        assert result.iloc[0]["p1_win_prob"] == pytest.approx(expected, abs=1e-4)
+
+    def test_result_clipped_to_open_interval(self) -> None:
+        """Blended probabilities must never be exactly 0 or 1."""
+        df = _matched_row(p_model=1.0, p1_odds=1.01, p2_odds=50.0)
+        result = blend_with_market(df, alpha=1.0)
+        p = result.iloc[0]["p1_win_prob"]
+        assert 0.0 < p < 1.0
+
+    def test_output_does_not_mutate_input(self) -> None:
+        """blend_with_market must not modify the input DataFrame."""
+        df = _matched_row(p_model=0.70, p1_odds=1.80, p2_odds=2.20)
+        original = df["p1_win_prob"].iloc[0]
+        _ = blend_with_market(df, alpha=0.5)
+        assert df["p1_win_prob"].iloc[0] == original
+
+    def test_invalid_alpha_raises(self) -> None:
+        """alpha outside [0, 1] must raise ValueError."""
+        df = _matched_row(p_model=0.70, p1_odds=1.80, p2_odds=2.20)
+        with pytest.raises(ValueError, match="alpha"):
+            blend_with_market(df, alpha=1.5)
+        with pytest.raises(ValueError, match="alpha"):
+            blend_with_market(df, alpha=-0.1)
+
+    def test_vectorised_multiple_rows(self) -> None:
+        """blend_with_market must handle multiple rows correctly."""
+        df = pd.DataFrame([
+            {"p1_win_prob": 0.60, "p1_odds": 1.80, "p2_odds": 2.20},
+            {"p1_win_prob": 0.40, "p1_odds": 2.50, "p2_odds": 1.60},
+        ])
+        result = blend_with_market(df, alpha=0.5)
+        assert len(result) == 2
+        # Both rows must be in valid probability range
+        assert (result["p1_win_prob"] > 0).all()
+        assert (result["p1_win_prob"] < 1).all()

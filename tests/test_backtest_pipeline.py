@@ -42,8 +42,7 @@ def _base_row(
     player1_name: str,
     player2_name: str,
     game_winner: int,
-    player1_elo: float = 1500.0,
-    player2_elo: float = 1500.0,
+    round_num: int = 1,
 ) -> dict:
     """Minimal ATP-style row with all columns expected by _prepare_features."""
     return {
@@ -53,10 +52,8 @@ def _base_row(
         "player1_id": 1,
         "player2_id": 2,
         "game_winner": game_winner,
-        "player1_elo": player1_elo,
-        "player2_elo": player2_elo,
         "surface": 0,
-        "round": 1,
+        "round": round_num,
         "year": tourney_date // 10000,
     }
 
@@ -96,16 +93,16 @@ class TestRowOrderAlignment:
     def test_prepare_features_output_is_sorted_by_tourney_date(self) -> None:
         """Row 0 of X must belong to the match with the earliest tourney_date."""
         rows = [
-            _base_row(20220501, "Alpha A", "Beta B", 1, player1_elo=1700.0),
-            _base_row(20220101, "Gamma G", "Delta D", 2, player1_elo=1400.0),  # earliest
-            _base_row(20220301, "Epsilon E", "Zeta Z", 1, player1_elo=1550.0),
+            _base_row(20220501, "Alpha A", "Beta B", 1, round_num=3),
+            _base_row(20220101, "Gamma G", "Delta D", 2, round_num=7),  # earliest
+            _base_row(20220301, "Epsilon E", "Zeta Z", 1, round_num=2),
         ]
         df = _make_atp_df(rows)
         X, y, feat_cols = _prepare_features(df)
 
-        elo_idx = feat_cols.index("player1_elo")
-        # Earliest date row has player1_elo=1400.0; it must be first after sort.
-        assert X[0, elo_idx] == pytest.approx(1400.0), (
+        round_idx = feat_cols.index("round")
+        # Earliest date row has round=7; it must be first after sort.
+        assert X[0, round_idx] == pytest.approx(7.0), (
             "Row 0 of X must correspond to the match with the smallest tourney_date."
         )
 
@@ -129,8 +126,8 @@ class TestRowOrderAlignment:
         # Odds "Surname I." format: surname = first token.
         # "John Smith" → p1_sn = "smith" matches odds winner "Smith J." first token "smith".
         rows = [
-            _base_row(20220601, "John Smith", "Kevin Jones", 1, player1_elo=1800.0),
-            _base_row(20220101, "Dmitri Novak", "Roger Federer", 2, player1_elo=1600.0),  # earlier
+            _base_row(20220601, "John Smith", "Kevin Jones", 1),
+            _base_row(20220101, "Dmitri Novak", "Roger Federer", 2),  # earlier
         ]
         test_sorted = _make_atp_df(rows).sort_values("tourney_date").reset_index(drop=True)
         # After sort: row 0 = Dmitri Novak (20220101), row 1 = John Smith (20220601)

@@ -162,3 +162,70 @@ class TestBacktesterPnL:
         result = run(df, cfg)
         text = summary(result)
         assert isinstance(text, str) and len(text) > 0
+
+
+# ---------------------------------------------------------------------------
+# CLV (Closing Line Value) tests
+# ---------------------------------------------------------------------------
+
+class TestCLV:
+    """CLV is computed when closing odds are present; NaN when absent."""
+
+    def _bet_with_closing(self, p1_close: float, p2_close: float) -> dict:
+        return {
+            "date": "2024-01-01",
+            "p1_win_prob": 0.65,
+            "actual_winner": 1,
+            "p1_odds": 2.0,
+            "p2_odds": 2.0,
+            "p1_closing_odds": p1_close,
+            "p2_closing_odds": p2_close,
+        }
+
+    def test_clv_finite_when_closing_odds_present(self) -> None:
+        df = pd.DataFrame([self._bet_with_closing(1.80, 2.10)])
+        cfg = BacktestConfig(initial_bankroll=1000.0, min_ev=0.0)
+        result = run(df, cfg)
+        clv = result.metrics.get("clv", float("nan"))
+        assert np.isfinite(clv), f"Expected finite CLV, got {clv}"
+
+    def test_clv_nan_when_closing_odds_absent(self) -> None:
+        df = pd.DataFrame([_even_money_bet("2024-01-01", winner=1, p1_prob=0.65)])
+        cfg = BacktestConfig(initial_bankroll=1000.0, min_ev=0.0)
+        result = run(df, cfg)
+        clv = result.metrics.get("clv", float("nan"))
+        assert not np.isfinite(clv), "CLV should be NaN when no closing odds"
+
+    def test_clv_positive_when_bet_at_better_than_closing(self) -> None:
+        # Model bet at 2.0; closing odds drop to 1.70 (market moved against us).
+        # Our bet odds (2.0) > closing odds (1.70) → CLV should be positive.
+        df = pd.DataFrame([self._bet_with_closing(p1_close=1.70, p2_close=2.30)])
+        cfg = BacktestConfig(initial_bankroll=1000.0, min_ev=0.0)
+        result = run(df, cfg)
+        clv = result.metrics.get("clv", float("nan"))
+        assert np.isfinite(clv) and clv > 0, f"Expected positive CLV, got {clv}"
+
+    def test_clv_negative_when_model_less_confident_than_closing(self) -> None:
+        # model_prob = 0.55, but closing market heavily favours p1 (fair_p1 ~0.68).
+        # CLV = 0.55 - 0.68 = negative → closing market was more confident than us.
+        row = {
+            "date": "2024-01-01",
+            "p1_win_prob": 0.55,   # our model
+            "actual_winner": 1,
+            "p1_odds": 2.0,
+            "p2_odds": 2.0,
+            "p1_closing_odds": 1.40,  # market heavily backed p1 by close
+            "p2_closing_odds": 3.00,
+        }
+        df = pd.DataFrame([row])
+        cfg = BacktestConfig(initial_bankroll=1000.0, min_ev=0.0)
+        result = run(df, cfg)
+        clv = result.metrics.get("clv", float("nan"))
+        assert np.isfinite(clv) and clv < 0, f"Expected negative CLV, got {clv}"
+
+    def test_summary_includes_clv_when_present(self) -> None:
+        df = pd.DataFrame([self._bet_with_closing(1.80, 2.10)])
+        cfg = BacktestConfig(initial_bankroll=1000.0, min_ev=0.0)
+        result = run(df, cfg)
+        text = summary(result)
+        assert "CLV" in text
