@@ -69,6 +69,7 @@ class _PlayerState:
     winning_streak: int = 0
     losing_streak: int = 0
     recent_matches: int = 0
+    recent_match_dates: list = field(default_factory=list)
     last_match_date: date | None = None
     elo: float = _ELO_INIT
     h2h: dict = field(default_factory=dict)
@@ -250,10 +251,10 @@ def build(data_dir: str, output_path: str) -> None:
         l_ps.winning_streak = 0
 
         for ps in (ps1, ps2):
-            if ps.last_match_date and ps.last_match_date >= two_weeks_ago:
-                ps.recent_matches += 1
-            else:
-                ps.recent_matches = 1
+            cutoff = match_date - timedelta(days=14)
+            ps.recent_match_dates.append(match_date)
+            ps.recent_match_dates = [d for d in ps.recent_match_dates if d >= cutoff]
+            ps.recent_matches = len(ps.recent_match_dates)
             ps.last_match_date = match_date
 
         # H2H

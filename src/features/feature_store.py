@@ -118,7 +118,8 @@ class PlayerState:
     losing_streak: int = 0
     weeks_inactive: float = 0.0
     last_match_date: Optional[date] = None
-    recent_matches: int = 0             # matches in last 14 days
+    recent_matches: int = 0             # matches in last 14 days (rolling window)
+    recent_match_dates: list = field(default_factory=list)
 
     # Per opponent H2H: {opp_player_id: wins}
     h2h: dict = field(default_factory=dict)
@@ -319,11 +320,10 @@ class FeatureStore:
                 else:
                     ps.losing_streak += 1
                     ps.winning_streak = 0
-                two_weeks_ago = match_date - timedelta(days=14)
-                if ps.last_match_date and ps.last_match_date >= two_weeks_ago:
-                    ps.recent_matches += 1
-                else:
-                    ps.recent_matches = 1
+                cutoff = match_date - timedelta(days=14)
+                ps.recent_match_dates.append(match_date)
+                ps.recent_match_dates = [d for d in ps.recent_match_dates if d >= cutoff]
+                ps.recent_matches = len(ps.recent_match_dates)
                 ps.last_match_date = match_date
 
             # H2H
@@ -440,7 +440,7 @@ class FeatureStore:
             float(ps2.recent_matches),
             float(ps1.h2h.get(ps2.player_id, 0)),
             float(ps2.h2h.get(ps1.player_id, 0)),
-            float(year),                      # year_col
+            ps1.glicko_r() - ps2.glicko_r(),  # Glicko rating diff (replaces duplicate year)
         ]
 
     def make_features(
@@ -626,11 +626,10 @@ class FeatureStore:
                 else:
                     ps.losing_streak += 1
                     ps.winning_streak = 0
-                two_weeks_ago = match_date - timedelta(days=14)
-                if ps.last_match_date and ps.last_match_date >= two_weeks_ago:
-                    ps.recent_matches += 1
-                else:
-                    ps.recent_matches = 1
+                cutoff = match_date - timedelta(days=14)
+                ps.recent_match_dates.append(match_date)
+                ps.recent_match_dates = [d for d in ps.recent_match_dates if d >= cutoff]
+                ps.recent_matches = len(ps.recent_match_dates)
                 ps.last_match_date = match_date
 
             ps1.h2h[id2] = ps1.h2h.get(id2, 0) + (1 if winner == 1 else 0)

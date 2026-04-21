@@ -25,7 +25,6 @@ Environment variables
     KELLY           Fractional Kelly multiplier (default: 0.25)
     MIN_EV          Minimum EV threshold (default: 0.02)
     MAX_KELLY       Hard stake cap as fraction of bankroll (default: 0.05)
-    MARKET_ALPHA    Model weight in ensemble blend (default: 0.3)
     MODEL_PATH      Path to saved XGBoost model JSON (optional — trains if absent)
     HOLDOUT_YEAR    First holdout year used to train saved model (default: 2022)
     ODDS_API_KEY    API key for the-odds-api.com (free tier, 500 credits/month)
@@ -59,7 +58,6 @@ PAPER_BANKROLL = float(os.environ.get("PAPER_BANKROLL", "1000.0"))
 KELLY          = float(os.environ.get("KELLY", "0.25"))
 MIN_EV         = float(os.environ.get("MIN_EV", "0.02"))
 MAX_KELLY      = float(os.environ.get("MAX_KELLY", "0.05"))
-MARKET_ALPHA   = float(os.environ.get("MARKET_ALPHA", "0.3"))
 MODEL_PATH       = os.environ.get("MODEL_PATH", "")
 MODEL_CACHE_PATH = os.environ.get("MODEL_CACHE_PATH", "paper_model.joblib")
 HOLDOUT_YEAR     = int(os.environ.get("HOLDOUT_YEAR", "2022"))
@@ -162,7 +160,6 @@ def _build_feature_builder(scaler):
 def _make_trader(model, scaler):
     from src.betting.paper_trader import PaperTrader, PaperTraderConfig
     from src.betting.odds_fetcher import BetfairFetcher, OddsPortalFetcher, TheOddsAPIFetcher
-    from src.evaluation.calibration import blend_with_market
 
     cfg = PaperTraderConfig(
         db_path=PAPER_DB,

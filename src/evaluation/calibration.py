@@ -106,14 +106,20 @@ class TemperatureScaling:
         -------
         self
         """
+        if probs.ndim != 2 or probs.shape[1] != 2:
+            raise ValueError(f"probs must have shape (n, 2), got {probs.shape}")
+        if len(outcomes) != len(probs):
+            raise ValueError(
+                f"probs and outcomes length mismatch: {len(probs)} vs {len(outcomes)}"
+            )
+
         def nll(t: float) -> float:
             """Negative log-likelihood after applying temperature T."""
             if t <= 0:
                 return float("inf")
-            # Re-compute softmax with temperature scaling
-            # probs[:,1] is p1_win; treat as logit proxy via log
-            log_p1 = np.log(np.clip(probs[:, 1], 1e-12, 1.0))
-            log_p2 = np.log(np.clip(probs[:, 0], 1e-12, 1.0))
+            # probs[:,0] = P(player1 wins) per sklearn class-index convention
+            log_p1 = np.log(np.clip(probs[:, 0], 1e-12, 1.0))
+            log_p2 = np.log(np.clip(probs[:, 1], 1e-12, 1.0))
             scaled_log_p1 = log_p1 / t
             scaled_log_p2 = log_p2 / t
             # Renormalise
@@ -147,12 +153,12 @@ class TemperatureScaling:
             raise RuntimeError("Call fit() before transform().")
 
         t = self.temperature_
-        log_p1 = np.log(np.clip(probs[:, 1], 1e-12, 1.0)) / t
-        log_p2 = np.log(np.clip(probs[:, 0], 1e-12, 1.0)) / t
+        log_p1 = np.log(np.clip(probs[:, 0], 1e-12, 1.0)) / t
+        log_p2 = np.log(np.clip(probs[:, 1], 1e-12, 1.0)) / t
         log_sum = np.logaddexp(log_p1, log_p2)
         cal_p1 = np.exp(log_p1 - log_sum)
         cal_p2 = 1.0 - cal_p1
-        return np.stack([cal_p2, cal_p1], axis=1)
+        return np.stack([cal_p1, cal_p2], axis=1)
 
 
 class CalibratedPredictor(BasePredictor):

@@ -244,6 +244,7 @@ class PaperTrader:
 
         settled = wins = 0
         total_pnl = 0.0
+        total_staked = 0.0
 
         with self._db() as conn:
             pending = conn.execute(
@@ -273,8 +274,9 @@ class PaperTrader:
             if won:
                 wins += 1
             total_pnl += pnl
+            total_staked += stake
 
-        self._write_daily_summary(date.today(), settled, wins, total_pnl)
+        self._write_daily_summary(date.today(), settled, wins, total_staked, total_pnl)
         logger.info(
             "Result cycle: settled=%d wins=%d pnl=%.2f", settled, wins, total_pnl
         )
@@ -349,6 +351,7 @@ class PaperTrader:
             X = self._feature_builder(m)  # type: ignore[call-arg]
         except Exception as exc:
             logger.warning("feature_builder failed for %s vs %s: %s", m.player1, m.player2, exc)
+            logger.debug("feature_builder traceback:", exc_info=True)
             return None
 
         if X is None:
@@ -396,11 +399,11 @@ class PaperTrader:
         self, results: list[dict], p1: str, p2: str
     ) -> Optional[int]:
         """Match a result dict to this player pair. Returns 1, 2, or None."""
-        p1_sn = p1.split()[-1].lower()
-        p2_sn = p2.split()[-1].lower()
+        p1_sn = p1.strip().split()[-1].lower()
+        p2_sn = p2.strip().split()[-1].lower()
         for r in results:
-            r1 = r.get("player1", "").split()[-1].lower()
-            r2 = r.get("player2", "").split()[-1].lower()
+            r1 = r.get("player1", "").strip().split()[-1].lower()
+            r2 = r.get("player2", "").strip().split()[-1].lower()
             if r1 == p1_sn and r2 == p2_sn:
                 return int(r["winner"])
             # Check swapped names
@@ -416,7 +419,7 @@ class PaperTrader:
         return (row[0], row[1]) if row else (1.0, 1.0)
 
     def _write_daily_summary(
-        self, day: date, n_bets: int, n_wins: int, total_pnl: float
+        self, day: date, n_bets: int, n_wins: int, total_staked: float, total_pnl: float
     ) -> None:
         with self._db() as conn:
             existing = conn.execute(
@@ -427,10 +430,10 @@ class PaperTrader:
             if existing:
                 nb = existing[0] + n_bets
                 nw = existing[1] + n_wins
-                ts = existing[2]
+                ts = existing[2] + total_staked
                 tp = existing[3] + total_pnl
             else:
-                nb, nw, ts, tp = n_bets, n_wins, 0.0, total_pnl
+                nb, nw, ts, tp = n_bets, n_wins, total_staked, total_pnl
 
             roi = (tp / ts * 100.0) if ts > 0 else None
             conn.execute(

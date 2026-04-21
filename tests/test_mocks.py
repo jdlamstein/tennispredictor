@@ -99,7 +99,7 @@ class TestTemperatureScaling:
         """Synthetic probs near 0 or 1; true outcomes are 70/30 (not 99/1)."""
         rng = np.random.default_rng(0)
         p = np.where(rng.random(n) < 0.7, 0.99, 0.01)
-        probs = np.stack([1.0 - p, p], axis=1)
+        probs = np.stack([p, 1.0 - p], axis=1)  # col0 = P(p1 wins), correct convention
         outcomes = (rng.random(n) < 0.7).astype(float)
         return probs, outcomes
 
@@ -117,8 +117,8 @@ class TestTemperatureScaling:
         ts = TemperatureScaling().fit(probs, outcomes)
         calibrated = ts.transform(probs)
         assert calibrated.shape == probs.shape
-        # Max calibrated probability must be strictly lower than 0.99
-        assert calibrated[:, 1].max() < 0.99
+        # Max calibrated P(player1 wins) must be strictly lower than 0.99
+        assert calibrated[:, 0].max() < 0.99
 
     def test_transform_rows_sum_to_one(self) -> None:
         probs, outcomes = self._overconfident_probs()
@@ -163,14 +163,14 @@ class TestCalibratedPredictor:
         # Build overconfident model: always says 0.99, but only right 65% of the time
         rng = np.random.default_rng(42)
         n = 300
-        raw = np.tile([0.01, 0.99], (n, 1)).astype(float)
+        raw = np.tile([0.99, 0.01], (n, 1)).astype(float)  # col0=P(p1)=overconfident
         outcomes = (rng.random(n) < 0.65).astype(float)  # true win rate = 65%, not 99%
         base = _mock_predictor(raw)
         cp = CalibratedPredictor(base)
         cp.calibrate(np.zeros((n, 4)), outcomes)
         calibrated = cp.predict_proba(np.zeros((n, 4)))
-        # Calibrated p1_win_prob (col 1) must be softer than raw 0.99
-        assert calibrated[:, 1].max() < 0.99
+        # Calibrated p1_win_prob (col 0) must be softer than raw 0.99
+        assert calibrated[:, 0].max() < 0.99
 
     def test_save_raises_not_implemented(self) -> None:
         base = _mock_predictor(self._raw_probs())

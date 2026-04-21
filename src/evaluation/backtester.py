@@ -131,7 +131,9 @@ def run(
         p2_prob = 1.0 - p1_prob
         p1_odds = float(row["p1_odds"])
         p2_odds = float(row["p2_odds"])
-        actual = int(row["actual_winner"])  # 1 or 2
+        actual = int(row["actual_winner"])
+        if actual not in (1, 2):
+            raise ValueError(f"actual_winner must be 1 or 2, got {actual}")
 
         # Clip to open interval — some models (e.g., Naive Bayes) return 0.0 or 1.0
         p1_prob = float(np.clip(p1_prob, 1e-6, 1.0 - 1e-6))
