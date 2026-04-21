@@ -26,9 +26,9 @@ Two blockers prevent the system from being useful long-term:
 
 ## Goals
 
-- [ ] **7A. Extend ATP database** — download 2023–2025 Sackmann CSVs, append to base DB, re-run enrichment. FeatureStore ratings become current.
+- [x] **7A. Extend ATP database** — download 2023–2025 Sackmann CSVs, append to base DB, re-run enrichment. FeatureStore ratings become current.
 - [ ] **7B. Verify settlement** — run `paper_trade.py settle` against the 21 logged Madrid predictions; confirm bets settle correctly when results come in.
-- [ ] **7C. Data refresh script** — one command to pull latest Sackmann data + re-enrich + invalidate model cache. Run weekly.
+- [x] **7C. Data refresh script** — `scripts/refresh_data.sh` created. Downloads current + prev year, rebuilds DB + enriched features, clears model cache.
 
 ---
 

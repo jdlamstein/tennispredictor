@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.evaluation.backtester import BacktestConfig, run, summary
 from src.evaluation.calibration import CalibratedPredictor, TemperatureScaling, blend_with_market
-from src.data.odds_loader import _parse_one
+from src.data.odds_loader import _parse_one, load_odds_dir
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +248,63 @@ class TestOddsLoaderParsing:
         with patch("src.data.odds_loader.pd.read_excel", return_value=raw):
             df = _parse_one(fake_path)
         assert df.empty
+
+
+# ---------------------------------------------------------------------------
+# OddsLoader — load_odds_dir
+# ---------------------------------------------------------------------------
+
+class TestLoadOddsDir:
+    """load_odds_dir must aggregate multiple files and filter by tour prefix."""
+
+    def _make_raw_odds_df(self, date1: str = "01/06/2024") -> pd.DataFrame:
+        return pd.DataFrame({
+            "Date": [date1, "15/07/2024"],
+            "Winner": ["Djokovic N.", "Alcaraz C."],
+            "Loser": ["Federer R.", "Sinner J."],
+            "PSW": [1.45, 1.60],
+            "PSL": [2.90, 2.40],
+        })
+
+    def test_empty_dir_returns_empty(self, tmp_path: Path) -> None:
+        result = load_odds_dir(tmp_path)
+        assert result.empty
+
+    def test_single_file_loaded(self, tmp_path: Path) -> None:
+        raw = self._make_raw_odds_df()
+        (tmp_path / "atp_2024.xlsx").touch()  # glob needs a real file to find
+        with patch("src.data.odds_loader.pd.read_excel", return_value=raw):
+            result = load_odds_dir(tmp_path)
+        assert len(result) == 2
+
+    def test_multiple_files_concatenated(self, tmp_path: Path) -> None:
+        raw = self._make_raw_odds_df()
+        (tmp_path / "atp_2023.xlsx").touch()
+        (tmp_path / "atp_2024.xlsx").touch()
+        with patch("src.data.odds_loader.pd.read_excel", return_value=raw):
+            result = load_odds_dir(tmp_path)
+        assert len(result) == 4  # 2 rows × 2 files
+
+    def test_wta_filter_skips_atp_files(self, tmp_path: Path) -> None:
+        (tmp_path / "atp_2024.xlsx").touch()
+        result = load_odds_dir(tmp_path, tour="wta")
+        assert result.empty
+
+    def test_result_sorted_by_date(self, tmp_path: Path) -> None:
+        """load_odds_dir must return rows in chronological order."""
+        early = self._make_raw_odds_df(date1="01/01/2023")
+        late = self._make_raw_odds_df(date1="01/01/2024")
+        (tmp_path / "atp_2023.xlsx").touch()
+        (tmp_path / "atp_2024.xlsx").touch()
+        call_count = [0]
+        def fake_read_excel(path, **kwargs):
+            df = early if call_count[0] == 0 else late
+            call_count[0] += 1
+            return df
+        with patch("src.data.odds_loader.pd.read_excel", side_effect=fake_read_excel):
+            result = load_odds_dir(tmp_path)
+        dates = result["date_int"].tolist()
+        assert dates == sorted(dates)
 
 
 # ---------------------------------------------------------------------------
