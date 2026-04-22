@@ -44,6 +44,15 @@ Deferred paid tools and services. Review when budget allows or free alternatives
 - **Why deferred**: Free tier/public data is sufficient initially
 - **When to revisit**: If feature engineering hits a ceiling and we need richer match statistics
 
+## Architecture
+
+### FeatureStore-Based Rolling Backtest (Option B)
+- **Cost**: ~2–3 days engineering
+- **What it provides**: Single code path for training AND inference — eliminates the flat-CSV vs FeatureStore divergence. `rolling_backtest.py` would call `FeatureStore.build_training_matrix()` per holdout year instead of `_prepare_features()`. Guarantees backtest features exactly match what paper_trade.py uses at inference time. Would enable proper validation of all FeatureStore improvements (serve stat EMAs, rolling recent_matches, Glicko diff, days_rest).
+- **Why deferred**: Current flat-CSV backtest is faster and sufficient for initial validation. Option A (adding EMA columns to enriched CSV) bridges the gap without full rework.
+- **When to revisit**: If Option A EMA columns prove insufficient or if training/inference feature divergence causes unexplained performance gaps. Pre-requisite for any feature that can only be computed via state replay (e.g., surface-specific serve stats, tournament fatigue).
+- **Key files to change**: `scripts/rolling_backtest.py` (replace `_prepare_features` + `StandardScaler` block with `FeatureStore.build_training_matrix`), `scripts/backtest.py` (same). `_prepare_features` and `match_odds` remain useful for odds joining.
+
 ## Betting Accounts
 
 ### Pinnacle Sports Account

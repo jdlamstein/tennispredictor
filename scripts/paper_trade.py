@@ -57,6 +57,8 @@ PAPER_DB       = os.environ.get("PAPER_DB", "paper_trades.db")
 PAPER_BANKROLL = float(os.environ.get("PAPER_BANKROLL", "1000.0"))
 KELLY          = float(os.environ.get("KELLY", "0.25"))
 MIN_EV         = float(os.environ.get("MIN_EV", "0.02"))
+MIN_EDGE       = float(os.environ.get("MIN_EDGE", "0.05"))
+MAX_ODDS       = float(os.environ.get("MAX_ODDS", "3.0"))
 MAX_KELLY      = float(os.environ.get("MAX_KELLY", "0.05"))
 MODEL_PATH       = os.environ.get("MODEL_PATH", "")
 MODEL_CACHE_PATH = os.environ.get("MODEL_CACHE_PATH", "paper_model.joblib")
@@ -89,7 +91,7 @@ def _load_or_train_model(scaler_ref: list):
         except Exception as exc:
             logger.warning("Cache load failed (%s) — retraining.", exc)
 
-    # Train from scratch using FeatureStore (40 features — matches inference path)
+    # Train from scratch using FeatureStore (54 features — matches inference path)
     logger.info("Training XGBoost on %s (holdout=%d)...", ATP_DB, HOLDOUT_YEAR)
     _store, X_train, y_train = FeatureStore.build_training_matrix(ATP_DB, holdout_year=HOLDOUT_YEAR)
 
@@ -166,6 +168,8 @@ def _make_trader(model, scaler):
         initial_bankroll=PAPER_BANKROLL,
         kelly_fraction=KELLY,
         min_ev=MIN_EV,
+        min_edge=MIN_EDGE,
+        max_odds=MAX_ODDS,
         max_kelly=MAX_KELLY,
         use_betfair=USE_BETFAIR,
     )

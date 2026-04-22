@@ -124,6 +124,15 @@ class PlayerState:
     # Per opponent H2H: {opp_player_id: wins}
     h2h: dict = field(default_factory=dict)
 
+    # Serve statistics — exponential moving average (alpha=0.15 ≈ 7-match half-life)
+    first_serve_pct: float = 0.60       # 1stIn / svpt
+    first_serve_win_pct: float = 0.72   # 1stWon / 1stIn
+    second_serve_win_pct: float = 0.50  # 2ndWon / (svpt - 1stIn)
+    bp_save_pct: float = 0.65           # bpSaved / bpFaced
+    ace_rate: float = 0.07              # ace / svpt
+    df_rate: float = 0.04               # df / svpt
+    serve_games: int = 0                # matches with valid serve data
+
     def glicko_r(self) -> float:
         """Rating on Glicko-1 scale."""
         return self.g2_mu * _SCALE + 1500.0
@@ -136,6 +145,46 @@ class PlayerState:
 
     def surface_elo(self, surface_name: str) -> float:
         return getattr(self, f"elo_{surface_name}", _INITIAL_ELO)
+
+
+_SERVE_ALPHA = 0.15  # EMA decay factor — ~7-match half-life
+
+
+def _update_serve_stats(ps: "PlayerState", row: "pd.Series", prefix: str) -> None:
+    """Update PlayerState serve-stat EMAs from one row of the enriched CSV."""
+    def _f(col: str) -> float:
+        v = row.get(col)
+        return float(v) if v is not None and not (isinstance(v, float) and math.isnan(v)) else 0.0
+
+    svpt = _f(f"{prefix}_svpt")
+    if svpt <= 0:
+        return
+    a = _SERVE_ALPHA
+    first_in = _f(f"{prefix}_1stIn")
+    first_won = _f(f"{prefix}_1stWon")
+    second_won = _f(f"{prefix}_2ndWon")
+    bp_saved = _f(f"{prefix}_bpSaved")
+    bp_faced = _f(f"{prefix}_bpFaced")
+    ace = _f(f"{prefix}_ace")
+    df = _f(f"{prefix}_df")
+    second_in = svpt - first_in
+
+    ps.first_serve_pct = a * (first_in / svpt) + (1 - a) * ps.first_serve_pct
+    ps.first_serve_win_pct = (
+        a * (first_won / first_in if first_in > 0 else ps.first_serve_win_pct)
+        + (1 - a) * ps.first_serve_win_pct
+    )
+    ps.second_serve_win_pct = (
+        a * (second_won / second_in if second_in > 0 else ps.second_serve_win_pct)
+        + (1 - a) * ps.second_serve_win_pct
+    )
+    ps.bp_save_pct = (
+        a * (bp_saved / bp_faced if bp_faced > 0 else ps.bp_save_pct)
+        + (1 - a) * ps.bp_save_pct
+    )
+    ps.ace_rate = a * (ace / svpt) + (1 - a) * ps.ace_rate
+    ps.df_rate = a * (df / svpt) + (1 - a) * ps.df_rate
+    ps.serve_games += 1
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +379,10 @@ class FeatureStore:
             ps1.h2h[id2] = ps1.h2h.get(id2, 0) + (1 if winner == 1 else 0)
             ps2.h2h[id1] = ps2.h2h.get(id1, 0) + (1 if winner == 2 else 0)
 
+            # Serve stats (EMA update — player1/player2 columns already normalised by build_database)
+            _update_serve_stats(ps1, row, "player1")
+            _update_serve_stats(ps2, row, "player2")
+
         # Final Glicko-2 flush
         _flush_glicko()
 
@@ -379,10 +432,13 @@ class FeatureStore:
         p1_seed: float = -10.0,
         p2_seed: float = -10.0,
     ) -> list[float]:
-        """Build 40-element feature list from two PlayerState objects.
+        """Build 54-element feature list from two PlayerState objects.
 
         Used by both make_features (inference) and build_training_matrix (training).
         All features reflect PRE-MATCH player state.
+        Positions 0-39: match context + ELO/Glicko/form/H2H (unchanged).
+        Positions 40-53: serve stat EMAs (first_serve_pct, first_serve_win_pct,
+            second_serve_win_pct, bp_save_pct, ace_rate, df_rate, serve_games) × 2 players.
         """
         surf_name = _SURFACE_MAP.get(surface, "hard")
         year = match_date.year
@@ -395,10 +451,10 @@ class FeatureStore:
                 return (match_date - ps.dob).days / 365.25
             return -10.0
 
-        def _weeks_inactive(ps: "PlayerState") -> float:
+        def _days_rest(ps: "PlayerState") -> float:
             if ps.last_match_date is None:
                 return -10.0
-            return max(0.0, (match_date - ps.last_match_date).days / 7.0)
+            return float(min((match_date - ps.last_match_date).days, 30))
 
         return [
             float(surface),
@@ -434,13 +490,28 @@ class FeatureStore:
             float(ps2.winning_streak),
             float(ps1.losing_streak),
             float(ps2.losing_streak),
-            _weeks_inactive(ps1),
-            _weeks_inactive(ps2),
+            _days_rest(ps1),                  # replaces weeks_inactive — finer fatigue signal
+            _days_rest(ps2),
             float(ps1.recent_matches),
             float(ps2.recent_matches),
             float(ps1.h2h.get(ps2.player_id, 0)),
             float(ps2.h2h.get(ps1.player_id, 0)),
-            ps1.glicko_r() - ps2.glicko_r(),  # Glicko rating diff (replaces duplicate year)
+            ps1.glicko_r() - ps2.glicko_r(),  # Glicko rating diff
+            # Serve statistics (EMA — 14 features, positions 41-54)
+            ps1.first_serve_pct,
+            ps1.first_serve_win_pct,
+            ps1.second_serve_win_pct,
+            ps1.bp_save_pct,
+            ps1.ace_rate,
+            ps1.df_rate,
+            float(ps1.serve_games),
+            ps2.first_serve_pct,
+            ps2.first_serve_win_pct,
+            ps2.second_serve_win_pct,
+            ps2.bp_save_pct,
+            ps2.ace_rate,
+            ps2.df_rate,
+            float(ps2.serve_games),
         ]
 
     def make_features(
@@ -484,7 +555,7 @@ class FeatureStore:
         """Build FeatureStore AND capture a training feature matrix in one pass.
 
         Features are captured from PRE-MATCH player state (no lookahead).
-        This ensures training and inference use identical 40-dim feature vectors.
+        This ensures training and inference use identical 54-dim feature vectors.
 
         Returns
         -------
@@ -634,6 +705,10 @@ class FeatureStore:
 
             ps1.h2h[id2] = ps1.h2h.get(id2, 0) + (1 if winner == 1 else 0)
             ps2.h2h[id1] = ps2.h2h.get(id1, 0) + (1 if winner == 2 else 0)
+
+            # Serve stats (EMA — must mirror build() for training/inference consistency)
+            _update_serve_stats(ps1, row, "player1")
+            _update_serve_stats(ps2, row, "player2")
 
         _flush_glicko()
 

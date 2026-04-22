@@ -61,6 +61,8 @@ MODEL_TYPE = os.environ.get("MODEL_TYPE", "naive_bayes")
 HOLDOUT_YEAR = int(os.environ.get("HOLDOUT_YEAR", "2022"))
 KELLY = float(os.environ.get("KELLY", "0.25"))
 MIN_EV = float(os.environ.get("MIN_EV", "0.02"))
+MIN_EDGE = float(os.environ.get("MIN_EDGE", "0.05"))
+MAX_ODDS = float(os.environ.get("MAX_ODDS", "3.0"))
 MARKET_ALPHA = float(os.environ.get("MARKET_ALPHA", "1.0"))
 CALIBRATE = os.environ.get("CALIBRATE", "0").lower() in ("1", "true", "yes")
 # Fraction of training data held out for temperature scaling (not used for model fitting)
@@ -125,9 +127,9 @@ def _prepare_features(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, list[st
     drop_cols = [c for c in _DROP_EXACT if c in df.columns]
     df = df.drop(columns=drop_cols, errors="ignore")
 
-    # Drop by pattern
+    # Drop by pattern — exclude EMA columns (_ema_ prefix = pre-match rolling avg, not raw stats)
     for pat in _DROP_PATTERNS:
-        df = df.drop(columns=[c for c in df.columns if pat in c], errors="ignore")
+        df = df.drop(columns=[c for c in df.columns if pat in c and "_ema_" not in c], errors="ignore")
 
     # game_winner was already extracted; ensure it's not in the feature matrix
     df = df.drop(columns=["game_winner"], errors="ignore")
@@ -365,6 +367,8 @@ def main() -> None:
         initial_bankroll=1000.0,
         kelly_fraction=KELLY,
         min_ev=MIN_EV,
+        min_edge=MIN_EDGE,
+        max_odds=MAX_ODDS,
         max_kelly=MAX_KELLY,
     )
     result = run(matched, cfg)

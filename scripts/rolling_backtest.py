@@ -42,6 +42,8 @@ START_YEAR   = int(os.environ.get("START_YEAR", "2019"))
 END_YEAR     = int(os.environ.get("END_YEAR", "2024"))
 KELLY        = float(os.environ.get("KELLY", "0.25"))
 MIN_EV       = float(os.environ.get("MIN_EV", "0.02"))
+MIN_EDGE     = float(os.environ.get("MIN_EDGE", "0.05"))
+MAX_ODDS     = float(os.environ.get("MAX_ODDS", "3.0"))
 _mk_env      = os.environ.get("MAX_KELLY", "0.05")
 MAX_KELLY    = None if _mk_env.lower() == "none" else float(_mk_env)
 MARKET_ALPHA = float(os.environ.get("MARKET_ALPHA", "1.0"))
@@ -106,6 +108,8 @@ def _run_year(
         initial_bankroll=1000.0,
         kelly_fraction=KELLY,
         min_ev=MIN_EV,
+        min_edge=MIN_EDGE,
+        max_odds=MAX_ODDS,
         max_kelly=MAX_KELLY,
     )
     result = bt_run(matched, cfg)
@@ -182,7 +186,7 @@ def main() -> None:
 
     print("=== Rolling Walk-Forward Backtest ===")
     print(f"Model: {MODEL_TYPE}  |  Years: {START_YEAR}–{END_YEAR}")
-    print(f"Kelly: {KELLY}  |  MinEV: {MIN_EV}  |  MaxKelly: {MAX_KELLY}  |  Alpha: {MARKET_ALPHA}")
+    print(f"Kelly: {KELLY}  |  MinEV: {MIN_EV}  |  MinEdge: {MIN_EDGE}  |  MaxOdds: {MAX_ODDS}  |  MaxKelly: {MAX_KELLY}  |  Alpha: {MARKET_ALPHA}")
     print()
 
     print("Loading data...")

@@ -1,13 +1,15 @@
-"""Add surface-specific ELO and Glicko-2 features to atp_database.csv.
+"""Add surface-specific ELO, Glicko-2, and serve-stat EMA features to atp_database.csv.
 
-Reads the existing database, appends 14 new feature columns, and writes to
+Reads the existing database, appends new feature columns, and writes to
 atp_database_enriched.csv (or a custom output path). The input file is never
 modified; you can re-run safely.
 
 New columns added
 -----------------
-Surface ELO (8):  player{1,2}_elo_{hard,clay,grass,carpet}
-Glicko-2   (6):  player{1,2}_glicko, player{1,2}_rd, player{1,2}_sigma
+Surface ELO (8):   player{1,2}_elo_{hard,clay,grass,carpet}
+Glicko-2   (6):   player{1,2}_glicko, player{1,2}_rd, player{1,2}_sigma
+Serve stats (14): player{1,2}_ema_{first_serve_pct, first_serve_win_pct,
+                  second_serve_win_pct, bp_save_pct, ace_rate, df_rate, serve_games}
 
 Usage
 -----
@@ -31,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.features.elo import add_surface_elo
 from src.features.glicko import add_glicko2
+from src.features.serve_stats import add_serve_stats
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -62,6 +65,12 @@ def enrich(input_path: str, output_path: str) -> None:
     t2 = time.time()
     enriched = add_glicko2(enriched)
     logger.info("  Done in %.1fs", time.time() - t2)
+
+    # Serve-stat EMAs — 14 new columns
+    logger.info("Computing serve-stat EMAs ...")
+    t3 = time.time()
+    enriched = add_serve_stats(enriched)
+    logger.info("  Done in %.1fs", time.time() - t3)
 
     new_cols = [c for c in enriched.columns if c not in raw.columns]
     logger.info("Added %d columns: %s", len(new_cols), new_cols)

@@ -111,6 +111,8 @@ class PaperTraderConfig:
     initial_bankroll: float = 1_000.0
     kelly_fraction: float = 0.25
     min_ev: float = 0.02
+    min_edge: float = 0.05   # model_prob - (1/odds) must exceed this
+    max_odds: float = 3.0    # skip bets on heavy underdogs
     max_kelly: float = 0.05
     predict_cron: str = "0 6 * * *"    # 06:00 UTC daily
     result_cron: str  = "0 23 * * *"   # 23:00 UTC daily
@@ -300,13 +302,18 @@ class PaperTrader:
         stake: Optional[float] = None
         ev: float = max(ev_p1, ev_p2)
 
-        if ev_p1 >= ev_p2 and ev_p1 > self._cfg.min_ev:
+        edge_p1 = p1_win_prob - 1.0 / m.p1_odds
+        edge_p2 = p2_win_prob - 1.0 / m.p2_odds
+
+        if (ev_p1 >= ev_p2 and ev_p1 > self._cfg.min_ev
+                and edge_p1 >= self._cfg.min_edge and m.p1_odds <= self._cfg.max_odds):
             bet_side = 1
             stake = min(
                 compute_kelly_stake(p1_win_prob, m.p1_odds, self._bankroll, self._cfg.kelly_fraction),
                 self._bankroll * self._cfg.max_kelly,
             )
-        elif ev_p2 > ev_p1 and ev_p2 > self._cfg.min_ev:
+        elif (ev_p2 > ev_p1 and ev_p2 > self._cfg.min_ev
+              and edge_p2 >= self._cfg.min_edge and m.p2_odds <= self._cfg.max_odds):
             bet_side = 2
             stake = min(
                 compute_kelly_stake(p2_win_prob, m.p2_odds, self._bankroll, self._cfg.kelly_fraction),

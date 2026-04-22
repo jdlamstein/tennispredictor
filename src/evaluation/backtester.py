@@ -66,6 +66,8 @@ class BacktestConfig:
     initial_bankroll: float = 1000.0
     kelly_fraction: float = 0.25
     min_ev: float = 0.02
+    min_edge: float = 0.05   # model_prob - (1/odds) must exceed this
+    max_odds: float = 3.0    # skip bets on heavy underdogs
     bet_on: str = "value"
     max_kelly: float | None = 0.05
 
@@ -142,11 +144,19 @@ def run(
         ev_p1 = expected_value(p1_prob, p1_odds)
         ev_p2 = expected_value(p2_prob, p2_odds)
 
+        # Edge = model_prob - implied_prob (1/odds)
+        edge_p1 = p1_prob - 1.0 / p1_odds
+        edge_p2 = p2_prob - 1.0 / p2_odds
+
         # Choose side to bet
         if config.bet_on == "value":
-            if ev_p1 >= ev_p2 and ev_p1 > config.min_ev:
+            p1_ok = (ev_p1 >= ev_p2 and ev_p1 > config.min_ev
+                     and edge_p1 >= config.min_edge and p1_odds <= config.max_odds)
+            p2_ok = (ev_p2 > ev_p1 and ev_p2 > config.min_ev
+                     and edge_p2 >= config.min_edge and p2_odds <= config.max_odds)
+            if p1_ok:
                 bet_side, p_bet, odds_bet, ev_bet = 1, p1_prob, p1_odds, ev_p1
-            elif ev_p2 > ev_p1 and ev_p2 > config.min_ev:
+            elif p2_ok:
                 bet_side, p_bet, odds_bet, ev_bet = 2, p2_prob, p2_odds, ev_p2
             else:
                 continue  # no value — skip
@@ -155,7 +165,9 @@ def run(
                 (1, p1_prob, p1_odds, ev_p1) if p1_prob >= p2_prob
                 else (2, p2_prob, p2_odds, ev_p2)
             )
-            if ev_bet <= config.min_ev:
+            implied = 1.0 / odds_bet
+            edge_bet = p_bet - implied
+            if ev_bet <= config.min_ev or edge_bet < config.min_edge or odds_bet > config.max_odds:
                 continue
 
         if bankroll <= 0:

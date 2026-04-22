@@ -247,9 +247,9 @@ class TestMakeFeatures:
         assert X.shape[1] > 10  # sanity: non-trivial feature count
 
     def test_feature_count_matches_expected(self):
-        # 40 features matching _prepare_features output
+        # 54 features: 40 original + 14 serve stat EMAs (7 per player)
         X = self.store.make_features("Novak Djokovic", "Carlos Alcaraz")
-        assert X.shape[1] == 40
+        assert X.shape[1] == 54
 
     def test_unknown_player1_returns_none(self):
         result = self.store.make_features("Andy Murray", "Carlos Alcaraz")
