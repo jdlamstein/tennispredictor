@@ -1,132 +1,192 @@
-# Tennis Prediction
-With [data generously maintained by Jeff Sackmann](https://github.com/JeffSackmann/tennis_atp), I built some 
-machine learning algorithms to predict upcoming winners from upcoming tennis matches.  
+# Tennis Predictor
 
-My driving question in this project is can I predict tennis match winners and 
-use those predictions to win at online betting houses such as Pinnacle Sports and Bet365.
-My source of betting odds may be found at http://www.tennis-data.co.uk/alldata.php. 
-All of these predictions are run by the betting houses and are the basis of the betting odds. In addition, the bookmaker's odds 
-not set to add to 100%, but a little higher, 102 or 103%. The addition gives the bookmaker an
-edge however the bet goes. Occasionally, the betting house will adjust the odds to make
-the bet more attractive. Perhaps a blowout is expected, and the betting house will
-give more favorable odds to balance out the bets. A nice paper by [Kaunitz, Zhong, and Kreiner](https://arxiv.org/abs/1710.02824) 
-tracked when the betting odds deviated from the expected average and their strategy was quite
-successful until the betting houses found out what they were up to. 
+With [data generously maintained by Jeff Sackmann](https://github.com/JeffSackmann/tennis_atp), I built a
+machine learning system to predict ATP tennis match winners and use those predictions to beat online
+betting houses such as Pinnacle Sports and Bet365.
 
-In predicting match winners, an important factor was creating a good statistic representing
-a player's skill. Tennis ranking points are awarded based on the tournament and are lost after 52 weeks. From chess, 
-the ELO score is calculated relative to the opponent's ELO. It also has memory based on previous wins and losses. 
-I chose to use ELO, but an interesting score to explore is the Glicko score, which has been suggested
-to be an improvement from ELO. Glicko-2, includes a rating volatility term, which can be seen as a player's consistency or 
-variance in the rating. 
+Bookmakers set odds slightly above 100% (typically 102–104%), giving them an edge regardless of outcome.
+A nice paper by [Kaunitz, Zhong, and Kreiner](https://arxiv.org/abs/1710.02824) exploited situations
+where betting odds deviated from the expected market average — their strategy was profitable until
+bookmakers identified and limited them.
 
-Betting strategies involving the Kelly Criteria was tackled by Sipko's thesis [Machine Learning for the Prediction of Professional Tennis Matches](https://www.doc.ic.ac.uk/teaching/distinguished-projects/2015/m.sipko.pdf).
-Simple strategies involve betting below a threshold. More sophisticated strategies involve
-calculating the optimal amount to bet based on the probability of winning and the 
-houses' betting odds. 
+Player skill representation is critical. Tennis ranking points decay over 52 weeks and are
+tournament-weighted; ELO (adapted from chess) provides more stable relative ratings. Glicko-2 extends
+ELO with a rating deviation and volatility term, capturing consistency alongside raw skill.
 
-At the moment, I provide the code to predict the winners, but not the betting predictions. 
+Bet sizing follows [Kelly Criterion](https://www.doc.ic.ac.uk/teaching/distinguished-projects/2015/m.sipko.pdf):
+stake as a fraction of bankroll proportional to edge over the bookmaker's implied probability.
+Quarter-Kelly (25% of full Kelly) reduces variance while preserving long-run EV.
 
+---
 
-## Setup 
-Pull the [repo](https://github.com/JeffSackmann/tennis_atp) in a location of your choosing. Record the location.
+## Architecture
 
+```
+Sackmann CSVs ──► build_database.py ──► atp_database.csv
+                                              │
+                                   enrich_features.py
+                                   (surface ELO, Glicko-2,
+                                    serve-stat EMAs, +28 cols)
+                                              │
+                                   atp_database_enriched.csv
+                                              │
+                          ┌───────────────────┼───────────────────┐
+                          │                   │                   │
+                    FeatureStore        rolling_backtest     paper_trade
+                   (54 features)         (walk-forward         (live odds
+                    XGBoost +             validation)        → SQLite DB)
+                    calibration
+```
 
-## How to Run
-Set the pythonpath to the project directory:
-    export PYTHONPATH=/path/to/tennispredictor/
+---
 
-Activate the virtual environment.
-Create virtual environment with using pip or conda. 
-For example with pip:
-    python -m pip install -r requirements.txt
+## Setup
 
+### Prerequisites
 
-## Clean Data
-The clean data script consolidates CSVs, removes null values, converts strings to numeric and calculates an ELO score, which
-from the literature is more predictive than tennis ranking. 
+- Python 3.11+ with [Poetry](https://python-poetry.org/)
+- Sackmann tennis_atp repo: `git clone https://github.com/JeffSackmann/tennis_atp ~/Data/tennis/tennis_atp`
+- [The Odds API](https://the-odds-api.com/) key (free tier: 500 requests/month) for live paper trading
 
-    python preprocessing/clean_data.py --tennisdir "/path/to/data/tennis_atp" --datadir "/path/to/your/data/directory"
+### Install
 
-## Train Model
-To train the MLP
+```bash
+poetry install
+```
 
-    python main/train.py --csv "/path/to/your/data/directory/atp_database.csv"
+### Environment Variables
 
-## Classifiers
-Traditional classifiers include Nearest Neighbors, Linear SVM, Gaussian Process, Decision Tree,
-Random Forest, Neural Net, AdaBoost, Naive Bayes, and QDA.
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ATP_ROOTDIR` | `~/Data/tennis` | Parent directory for all data files |
+| `ATP_DB` | `$ATP_ROOTDIR/tennis_data/atp_database_enriched.csv` | Enriched CSV used by backtester and FeatureStore |
+| `PAPER_DB` | `$(pwd)/paper_trades.db` | SQLite database for paper-trade predictions (use absolute path) |
+| `ODDS_API_KEY` | — | The Odds API key |
+| `HOLDOUT_YEAR` | `2022` | First holdout year; model trained on all data before this year |
+| `MIN_EDGE` | `0.05` | Minimum model edge over implied probability to place a bet |
+| `MAX_ODDS` | `3.0` | Maximum odds (no heavy underdog bets) |
+| `KELLY` | `0.25` | Kelly fraction (quarter-Kelly) |
 
-To train traditional classifiers on the data, run
+---
 
-    python main.classifier.py --csv "/path/to/your/data/directory/atp_database.csv"  
-    --rootdir "/path/to/your/data/directory"
+## Data Pipeline
 
-where `rootdir` is your results directory. 
+### 1. Build base database
 
-The classifiers are saved based on `timestring`.  
+Consolidates all Sackmann ATP CSVs into a single chronologically sorted file:
 
-To predict on your trained classifiers, run
+```bash
+poetry run python scripts/build_database.py
+# Output: ~/Data/tennis/tennis_data/atp_database.csv
+```
 
-    python main.classifier.py --csv "/path/to/your/data/directory/atp_database.csv"  
-        --rootdir "/path/to/your/data/directory" 
-        --timestring "timestring of your trained classifier"
-        --classifier_name "Name of your classifier"
+### 2. Enrich with rating and serve-stat features
 
-## Deploy on New Data
-To predict on new matches, run 
+Adds 28 new columns — surface-specific ELO (8), Glicko-2 (6), serve-stat EMAs (14) — all
+computed as pre-match values with no look-ahead bias:
 
-    python preprocessing/generate_deploy.py
+```bash
+poetry run python scripts/enrich_features.py
+# Input:  atp_database.csv
+# Output: atp_database_enriched.csv  (~916K rows, 28 new columns, ~2.5 min)
+```
 
-This script saves a file called `deploy.csv` which can be used in lieu of 
-atp_database.csv.
+Re-run this after pulling updated Sackmann data.
 
-To deploy on a classifier, replace csv with the output of generate_deploy.py.  
+---
 
-To deploy on the neural network, run
+## Backtesting
 
-    python main/deploy.py --csv /path/to/csv
-    --ckpt_path /path/to/model
-    --rootdir /path/to/your/analysis/dir
+### Rolling backtest (walk-forward)
+
+Trains one model per holdout year and evaluates on the next year — no future data leaks:
+
+```bash
+MIN_EDGE=0.05 MAX_ODDS=3.0 poetry run python scripts/rolling_backtest.py
+```
+
+### Single-period backtest
+
+```bash
+MIN_EDGE=0.05 MAX_ODDS=3.0 \
+  ATP_DB=~/Data/tennis/tennis_data/atp_database_enriched.csv \
+  poetry run python scripts/backtest.py
+```
+
+---
+
+## Paper Trading (Live)
+
+### Predict — fetch current odds and log predictions
+
+```bash
+PAPER_DB=$(pwd)/paper_trades.db \
+  ATP_DB=~/Data/tennis/tennis_data/atp_database_enriched.csv \
+  ODDS_API_KEY=<your-key> \
+  poetry run python scripts/paper_trade.py predict
+```
+
+### Settle — match completed results to predictions
+
+```bash
+PAPER_DB=$(pwd)/paper_trades.db \
+  poetry run python scripts/paper_trade.py settle --days 2
+```
+
+> **Note:** Results are sourced from Sackmann's year-end CSVs (currently available through 2024).
+> Settlement of 2025/2026 predictions will work once those files are published, or when a live
+> results source is integrated.
+
+### Summary — P&L report
+
+```bash
+PAPER_DB=$(pwd)/paper_trades.db \
+  poetry run python scripts/paper_trade.py summary
+```
+
+---
+
+## Tests
+
+```bash
+poetry run pytest -x -q   # 225 tests
+```
+
+---
 
 ## Results
 
-Classifiers predicted matches in the test set with over 90% accuracy. This seems high, 
-I'm surprised a match could be predicted with such confidence. I plan to check on outside datasets. 
+### Model
 
-### Machine Learning
+- **Algorithm:** XGBoost with Platt-scaling calibration
+- **Features:** 54 (surface-specific ELO diff × 4 surfaces, Glicko-2 diff, H2H record,
+  serve-stat EMAs, days rest, win/loss streaks, surface encoding, time encoding)
+- **Accuracy at high confidence** (model_prob > 0.65): 74.8%
 
-Trained with Pytorch Lightning, the model leveraged Adam with a learning rate of 1e-6, with a 
-batch size of 128 matches reached 93.1% accuracy. 
+### Backtest (2016–2021, Phase 8 filters)
 
-Test Set Score:
-- 0.931
+Bet filters: min edge = 5% above implied probability, max odds = 3.0, quarter-Kelly sizing.
 
-From Wandb, the validation accuracy over training is:
+| Metric | Value |
+|--------|-------|
+| Mean ROI | -4.4% |
+| Profitable years | 2 / 6 |
+| Bet win rate | ~51% |
+| Break-even win rate | ~53% (given ~4% average bookmaker vig) |
 
-![val-acc-tennis.png](results/val-acc-tennis.png)
+**Filter effect:** Edge filter reduces bet volume by ~60% and raises win rate from 43% → 51%.
+The remaining gap to break-even (~2pp) is the active research target.
 
-The loss curve is shown below:
+### Active paper trading
 
-![val-loss-tennis.png](results/val-loss-tennis.png)
+- 32 predictions logged for Madrid Open 2026 (April 2026)
+- Settlement pending Sackmann 2026 data publication
 
-### Classifiers
+---
 
-Test Set Scores:
-- Linear SVM 0.927
-- Decision Tree 0.920
-- Random Forest 0.871
-- AdaBoost 0.926
-- Neural Net 0.900
-- Nearest Neighbors 0.715
-- Naive Bayes 0.930
-- QDA 0.917
+## Legacy Code
 
-The classifiers scored between 90-92% accuracy on the test set save for the Nearest Neighbors
-classifier, perhaps due to the high dimensionality of the feature space. 
-
-Analyzing feature importances with permutations and Mean Accuracy Decrease, scoring with
-Negative Mean Squared Error, it seems winning streaks and losing streaks were critical across
-all classifiers. ELO, handedness, and seed affected some classifiers. 
-
-![Naive Bayes Feature Importance Figure](/results/Naive_Bayes_neg_mean_squared_error_importance.png) ![Adaboost Feature Importance Figure](/results/AdaBoost_neg_mean_squared_error_importance.png)
+The `preprocessing/`, `models/`, and `main/` directories contain the original Phase 0-2 code
+(PyTorch Lightning MLP, scikit-learn classifiers). These achieved 90–93% test accuracy but did
+not implement betting strategy. They are preserved for reference; the active pipeline lives in
+`src/` and `scripts/`.

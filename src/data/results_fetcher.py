@@ -80,47 +80,61 @@ def fetch_recent_results(
 def _from_sackmann(
     session: requests.Session,
     cutoff: date,
+    _current_year: int | None = None,
 ) -> list[dict]:
-    """Download current-year ATP matches CSV from Sackmann's GitHub repo."""
-    year = datetime.now().year
+    """Download Sackmann ATP CSVs for all years from cutoff to current year.
+
+    When the cutoff falls in a prior calendar year, fetches each year's CSV
+    separately so no matches are silently skipped at year boundaries.
+    """
+    current_year = _current_year or datetime.now().year
+    results: list[dict] = []
+    for year in range(cutoff.year, current_year + 1):
+        results.extend(_fetch_sackmann_year(session, year, cutoff))
+    return results
+
+
+def _fetch_sackmann_year(
+    session: requests.Session,
+    year: int,
+    cutoff: date,
+) -> list[dict]:
+    """Fetch and parse one year's Sackmann ATP matches CSV."""
+    import pandas as pd
+
     url = _SACKMANN_URL.format(year=year)
     try:
         resp = session.get(url, timeout=_REQUEST_TIMEOUT)
         resp.raise_for_status()
     except requests.RequestException as exc:
-        logger.warning("Sackmann fetch failed: %s", exc)
+        logger.warning("Sackmann fetch failed (year=%d): %s", year, exc)
         return []
 
     try:
-        import pandas as pd
         df = pd.read_csv(io.StringIO(resp.text), low_memory=False)
     except Exception as exc:
-        logger.warning("Sackmann CSV parse failed: %s", exc)
+        logger.warning("Sackmann CSV parse failed (year=%d): %s", year, exc)
         return []
 
-    # Column names in Sackmann format: tourney_date, winner_name, loser_name, tourney_name
     required = {"tourney_date", "winner_name", "loser_name"}
     if not required.issubset(df.columns):
-        logger.warning("Sackmann CSV missing expected columns: %s", df.columns.tolist())
+        logger.warning("Sackmann CSV missing columns (year=%d): %s", year, df.columns.tolist())
         return []
 
     df = df.dropna(subset=["tourney_date", "winner_name", "loser_name"])
     df["_date"] = df["tourney_date"].apply(_parse_sackmann_date)
     df = df[df["_date"] >= cutoff]
 
-    results: list[dict] = []
-    for _, row in df.iterrows():
-        # Sackmann stores winner and loser directly — winner is always player1 here.
-        # PaperTrader uses (player1, player2) from our MatchOdds which may have
-        # either player listed first. Return both orderings for the matcher.
-        results.append({
+    return [
+        {
             "player1":    row["winner_name"],
             "player2":    row["loser_name"],
             "winner":     1,
             "tournament": row.get("tourney_name", ""),
             "date":       row["_date"],
-        })
-    return results
+        }
+        for _, row in df.iterrows()
+    ]
 
 
 def _parse_sackmann_date(val: object) -> date:

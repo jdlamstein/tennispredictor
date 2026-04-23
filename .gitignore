@@ -1,7 +1,29 @@
+# Logs and model artifacts
 *.log
 *.h5
+*.joblib
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated data files
+*.csv
+!tests/**/*.csv
+
+# IDE and OS
 .idea/
-wandb/
-**/__pycache__/
+.vscode/
 .DS_Store
 .env
+
+# ML experiment tracking
+wandb/
+
+# Python
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+

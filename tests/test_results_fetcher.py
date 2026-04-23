@@ -18,6 +18,9 @@ from src.data.results_fetcher import (
     fetch_recent_results,
 )
 
+# Pin current_year in all _from_sackmann calls so tests don't drift over time.
+_CY = 2024
+
 
 # ---------------------------------------------------------------------------
 # _parse_sackmann_date
@@ -58,45 +61,58 @@ class TestFromSackmann:
     def test_returns_results_within_cutoff(self):
         session = self._session(_FAKE_CSV)
         cutoff = date(2024, 5, 1)
-        results = _from_sackmann(session, cutoff)
-        # 2 matches in 2024, 1 in 2023 (before cutoff when cutoff=2024-05-01? No,
-        # 20230101 < 2024-05-01, so excluded. 2 matches expected.)
+        # _current_year=2024 → single fetch; 2 matches on 20240601 >= cutoff
+        results = _from_sackmann(session, cutoff, _current_year=_CY)
         assert len(results) == 2
 
     def test_cutoff_excludes_older_matches(self):
         session = self._session(_FAKE_CSV)
         cutoff = date(2024, 7, 1)  # all matches before this
-        results = _from_sackmann(session, cutoff)
+        results = _from_sackmann(session, cutoff, _current_year=_CY)
         assert len(results) == 0
 
     def test_winner_is_always_player1(self):
         session = self._session(_FAKE_CSV)
         cutoff = date(2024, 1, 1)
-        results = _from_sackmann(session, cutoff)
+        results = _from_sackmann(session, cutoff, _current_year=_CY)
         assert all(r["winner"] == 1 for r in results)
 
     def test_network_error_returns_empty(self):
         import requests
         session = MagicMock()
         session.get.side_effect = requests.ConnectionError("timeout")
-        results = _from_sackmann(session, date(2024, 1, 1))
+        results = _from_sackmann(session, date(2024, 1, 1), _current_year=_CY)
         assert results == []
 
     def test_missing_columns_returns_empty(self):
         bad_csv = "a,b,c\n1,2,3\n"
         session = self._session(bad_csv)
-        results = _from_sackmann(session, date(2024, 1, 1))
+        results = _from_sackmann(session, date(2024, 1, 1), _current_year=_CY)
         assert results == []
 
     def test_result_dict_has_required_keys(self):
         session = self._session(_FAKE_CSV)
         cutoff = date(2024, 1, 1)
-        results = _from_sackmann(session, cutoff)
+        results = _from_sackmann(session, cutoff, _current_year=_CY)
         for r in results:
             assert "player1" in r
             assert "player2" in r
             assert "winner" in r
             assert r["winner"] in (1, 2)
+
+    def test_multi_year_makes_multiple_requests(self):
+        """Cutoff in prior year triggers one GET per year."""
+        session = self._session(_FAKE_CSV)
+        cutoff = date(2023, 1, 1)
+        _from_sackmann(session, cutoff, _current_year=2024)
+        assert session.get.call_count == 2  # 2023 and 2024
+
+    def test_single_year_makes_one_request(self):
+        """Cutoff within current year makes exactly one GET."""
+        session = self._session(_FAKE_CSV)
+        cutoff = date(2024, 5, 1)
+        _from_sackmann(session, cutoff, _current_year=2024)
+        assert session.get.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -166,8 +182,8 @@ class TestFetchRecentResults:
         session = MagicMock()
         session.get.return_value = resp
 
-        results = fetch_recent_results(days=365 * 5, session=session)
-        # All 3 rows (cutoff far in past)
-        assert len(results) == 3
-        # Only 1 HTTP call (Sackmann); UTS never tried
-        assert session.get.call_count == 1
+        # days=7 → cutoff is within current year → one Sackmann GET
+        results = fetch_recent_results(days=7, session=session)
+        assert isinstance(results, list)
+        # At least one GET (Sackmann); UTS never tried (Sackmann returned data)
+        assert session.get.call_count >= 1

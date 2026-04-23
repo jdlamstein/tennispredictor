@@ -53,7 +53,7 @@ ATP_ROOTDIR = os.path.expanduser(os.environ.get("ATP_ROOTDIR", "~/Data/tennis"))
 _default_db = os.path.join(ATP_ROOTDIR, "tennis_data", "atp_database_enriched.csv")
 ATP_DB       = os.path.expanduser(os.environ.get("ATP_DB", _default_db))
 
-PAPER_DB       = os.environ.get("PAPER_DB", "paper_trades.db")
+PAPER_DB       = os.path.abspath(os.environ.get("PAPER_DB", "paper_trades.db"))
 PAPER_BANKROLL = float(os.environ.get("PAPER_BANKROLL", "1000.0"))
 KELLY          = float(os.environ.get("KELLY", "0.25"))
 MIN_EV         = float(os.environ.get("MIN_EV", "0.02"))
